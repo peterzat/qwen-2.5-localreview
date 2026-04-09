@@ -205,6 +205,37 @@ fi
 
 # ============================================================
 echo ""
+echo "==> Test 5: system prompt eats into user budget (requires model in HF cache)"
+# ============================================================
+
+if ${HAS_MODEL}; then
+  # Large system prompt (~900 tokens) with max_model_len=1024 leaves
+  # almost no room for user input after output reserve (4096). The user
+  # input should be truncated or empty.
+  "${PYTHON}" -c "print('Analyze this code carefully. ' * 200)" > "${TEST_DIR}/big_system.txt"
+  echo "print('hello')" > "${TEST_DIR}/small_input.txt"
+
+  STDERR_FILE="${TEST_DIR}/stderr5.txt"
+  LOCAL_MAX_MODEL_LEN=1024 "${PYTHON}" "${SCRIPT}" \
+    --system "${TEST_DIR}/big_system.txt" \
+    --input "${TEST_DIR}/small_input.txt" \
+    --dry-run \
+    2>"${STDERR_FILE}" || true
+
+  # With a 1024 context window and 4096 output reserve, the system prompt
+  # alone exceeds available capacity. Should see truncation or empty warning.
+  if grep -q "truncated" "${STDERR_FILE}" || grep -q "empty after truncation" "${STDERR_FILE}"; then
+    pass "system prompt budget: correctly limits user input"
+  else
+    fail "system prompt budget: no truncation/empty warning"
+    echo "    stderr: $(cat "${STDERR_FILE}")"
+  fi
+else
+  echo "  SKIP (model not in HF cache, tokenizer unavailable)"
+fi
+
+# ============================================================
+echo ""
 echo "==> Results: ${TOTAL} checks, ${FAILS} failures"
 # ============================================================
 
