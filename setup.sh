@@ -69,6 +69,15 @@ EOF
   echo "[ok] Config added"
 fi
 
+# --- Step 5: Configure git hooks ---
+
+if [[ "$(git -C "${SCRIPT_DIR}" config --get core.hooksPath 2>/dev/null)" == ".githooks" ]]; then
+  echo "[ok] git hooks configured"
+else
+  git -C "${SCRIPT_DIR}" config core.hooksPath .githooks
+  echo "[ok] git hooks configured"
+fi
+
 # --- Done ---
 
 echo ""
