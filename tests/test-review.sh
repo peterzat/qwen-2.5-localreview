@@ -180,16 +180,15 @@ echo "==> Test 4: oversized input truncation"
 
 echo "You are a reviewer." > "${TEST_DIR}/system.txt"
 
-# Generate input larger than the default max (~98K chars).
+# Generate input larger than the max for a small context window.
 "${PYTHON}" -c "print('x' * 120000)" > "${TEST_DIR}/big.txt"
 
 STDERR_FILE="${TEST_DIR}/stderr4.txt"
-# Run with a very small max_model_len to trigger truncation without needing
-# the actual model. This will fail at model load (no GPU needed for the
-# truncation check), but the truncation warning should appear before that.
+# Use --dry-run to validate without loading vLLM (instant).
 LOCAL_MAX_MODEL_LEN=1024 "${PYTHON}" "${SCRIPT}" \
   --system "${TEST_DIR}/system.txt" \
   --input "${TEST_DIR}/big.txt" \
+  --dry-run \
   2>"${STDERR_FILE}" || true
 
 if grep -q "truncating" "${STDERR_FILE}" || grep -q "TRUNCATED" "${STDERR_FILE}"; then

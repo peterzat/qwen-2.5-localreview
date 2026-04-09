@@ -32,6 +32,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Local code review via vLLM")
     parser.add_argument("--system", required=True, help="Path to system prompt file")
     parser.add_argument("--input", required=True, help="Path to user input file")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Validate inputs and exit before loading model")
     args = parser.parse_args()
 
     try:
@@ -60,6 +62,10 @@ def main() -> int:
         user_input = user_input[:max_chars] + (
             f"\n\n[TRUNCATED: input exceeded {max_chars} chars]"
         )
+
+    if args.dry_run:
+        print(f"[{TAG}] dry-run: input valid, {len(user_input)} chars", file=sys.stderr)
+        return 0
 
     # Load model and run inference.
     start = time.monotonic()

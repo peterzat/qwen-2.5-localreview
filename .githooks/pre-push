@@ -4,7 +4,7 @@ set -euo pipefail
 # Pre-push hook: runs fast tests (no GPU required, < 2 seconds).
 # The GPU inference test in test-review.sh auto-skips when unavailable.
 
-REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "pre-push: running tests..."
 
