@@ -175,27 +175,32 @@ fi
 
 # ============================================================
 echo ""
-echo "==> Test 4: oversized input truncation"
+echo "==> Test 4: oversized input truncation (requires model in HF cache)"
 # ============================================================
 
-echo "You are a reviewer." > "${TEST_DIR}/system.txt"
+if ${HAS_MODEL}; then
+  echo "You are a reviewer." > "${TEST_DIR}/system.txt"
 
-# Generate input larger than the max for a small context window.
-"${PYTHON}" -c "print('x' * 120000)" > "${TEST_DIR}/big.txt"
+  # Generate input larger than the max for a small context window.
+  "${PYTHON}" -c "print('x' * 120000)" > "${TEST_DIR}/big.txt"
 
-STDERR_FILE="${TEST_DIR}/stderr4.txt"
-# Use --dry-run to validate without loading vLLM (instant).
-LOCAL_MAX_MODEL_LEN=1024 "${PYTHON}" "${SCRIPT}" \
-  --system "${TEST_DIR}/system.txt" \
-  --input "${TEST_DIR}/big.txt" \
-  --dry-run \
-  2>"${STDERR_FILE}" || true
+  STDERR_FILE="${TEST_DIR}/stderr4.txt"
+  # Use --dry-run with a tiny context window. The tokenizer-based guard
+  # truncates the input and --dry-run exits before loading vLLM.
+  LOCAL_MAX_MODEL_LEN=1024 "${PYTHON}" "${SCRIPT}" \
+    --system "${TEST_DIR}/system.txt" \
+    --input "${TEST_DIR}/big.txt" \
+    --dry-run \
+    2>"${STDERR_FILE}" || true
 
-if grep -q "truncating" "${STDERR_FILE}" || grep -q "TRUNCATED" "${STDERR_FILE}"; then
-  pass "oversized input: truncation warning"
+  if grep -q "truncated" "${STDERR_FILE}"; then
+    pass "oversized input: truncation warning"
+  else
+    fail "oversized input: no truncation warning on stderr"
+    echo "    stderr: $(cat "${STDERR_FILE}")"
+  fi
 else
-  fail "oversized input: no truncation warning on stderr"
-  echo "    stderr: $(cat "${STDERR_FILE}")"
+  echo "  SKIP (model not in HF cache, tokenizer unavailable)"
 fi
 
 # ============================================================

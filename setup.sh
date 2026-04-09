@@ -38,17 +38,15 @@ fi
 # Per ml-gpu.md: "Shared HF cache: ~/.cache/huggingface. Never override
 # HF_HOME per-project; all projects share the same downloaded models."
 
-HF_CACHE_DIR="${HOME}/.cache/huggingface/hub/models--${MODEL//\//--}"
-if [[ -d "${HF_CACHE_DIR}" ]]; then
-  echo "[ok] Model ${MODEL} already in HF cache"
-else
-  echo "[..] Downloading ${MODEL} to shared HF cache (~8GB)..."
-  "${VENV_DIR}/bin/python" -c "
+# snapshot_download is idempotent: verifies file integrity and only
+# downloads missing or incomplete files. Always call it so partial
+# or corrupt downloads from interrupted runs are repaired.
+echo "[..] Verifying model ${MODEL} in shared HF cache..."
+"${VENV_DIR}/bin/python" -c "
 from huggingface_hub import snapshot_download
 snapshot_download('${MODEL}')
 "
-  echo "[ok] Model downloaded"
-fi
+echo "[ok] Model verified"
 
 # --- Step 4: Configure git hooks ---
 

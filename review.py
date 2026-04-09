@@ -7,7 +7,7 @@ import sys
 import time
 
 # Suppress vLLM's verbose loading output before importing.
-# Only structured [qwen-2.5-localreview] status lines should reach stderr.
+# Only structured [qwen] status lines should reach stderr.
 os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
 
 # vLLM pulls in torch which is noisy about CUDA.
@@ -17,15 +17,28 @@ logging.disable(logging.WARNING)
 TAG = "qwen"
 DEFAULT_MODEL = "Qwen/Qwen2.5-Coder-14B-Instruct-AWQ"
 DEFAULT_MAX_MODEL_LEN = 32768
-CHARS_PER_TOKEN = 3.5
 OUTPUT_RESERVE_TOKENS = 4096
-SYSTEM_PROMPT_RESERVE_TOKENS = 512
 
 
-def estimate_max_input_chars(max_model_len: int) -> int:
-    """Conservative estimate of max input characters that fit in context."""
-    available_tokens = max_model_len - OUTPUT_RESERVE_TOKENS - SYSTEM_PROMPT_RESERVE_TOKENS
-    return int(available_tokens * CHARS_PER_TOKEN)
+def truncate_to_fit(tokenizer, system_prompt, user_input, max_model_len):
+    """Truncate user_input so system_prompt + user_input + output reserve fits.
+
+    Uses the model's tokenizer for accurate token counting. Returns the
+    (possibly truncated) user_input and whether truncation occurred.
+    """
+    system_tokens = len(tokenizer.encode(system_prompt))
+    available = max_model_len - system_tokens - OUTPUT_RESERVE_TOKENS
+    if available <= 0:
+        return "", True
+
+    user_tokens = tokenizer.encode(user_input)
+    if len(user_tokens) <= available:
+        return user_input, False
+
+    # Truncate at the token level, then decode back to text.
+    truncated_tokens = user_tokens[:available]
+    truncated_text = tokenizer.decode(truncated_tokens, skip_special_tokens=True)
+    return truncated_text, True
 
 
 def main() -> int:
@@ -52,19 +65,29 @@ def main() -> int:
     model = os.environ.get("LOCAL_MODEL", DEFAULT_MODEL)
     max_model_len = int(os.environ.get("LOCAL_MAX_MODEL_LEN", str(DEFAULT_MAX_MODEL_LEN)))
 
-    # Context limit guard.
-    max_chars = estimate_max_input_chars(max_model_len)
-    if len(user_input) > max_chars:
+    # Context limit guard: tokenizer-based, accounts for system prompt.
+    from transformers import AutoTokenizer
+    tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=True)
+
+    user_input, was_truncated = truncate_to_fit(
+        tokenizer, system_prompt, user_input, max_model_len,
+    )
+    if was_truncated:
+        user_tokens = len(tokenizer.encode(user_input))
+        system_tokens = len(tokenizer.encode(system_prompt))
         print(
-            f"[{TAG}] Input too large ({len(user_input)} chars > {max_chars} limit), truncating",
+            f"[{TAG}] Input truncated to fit context window"
+            f" (system: {system_tokens}, user: {user_tokens},"
+            f" reserve: {OUTPUT_RESERVE_TOKENS}, max: {max_model_len})",
             file=sys.stderr,
         )
-        user_input = user_input[:max_chars] + (
-            f"\n\n[TRUNCATED: input exceeded {max_chars} chars]"
-        )
+    if not user_input:
+        print(f"[{TAG}] Input empty after truncation, skipping", file=sys.stderr)
+        return 0
 
     if args.dry_run:
-        print(f"[{TAG}] dry-run: input valid, {len(user_input)} chars", file=sys.stderr)
+        user_tokens = len(tokenizer.encode(user_input))
+        print(f"[{TAG}] dry-run: input valid, {user_tokens} tokens", file=sys.stderr)
         return 0
 
     # Load model and run inference.
@@ -111,5 +134,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as e:
-        print(f"[qwen-2.5-localreview] Fatal error: {e}", file=sys.stderr)
+        print(f"[{TAG}] Fatal error: {e}", file=sys.stderr)
         sys.exit(0)  # fail-open

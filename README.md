@@ -38,14 +38,7 @@ Each invocation loads the model (~30-60s), runs inference (~60-120s), then exits
 
 This section is for zat.env and any project using `review-external.sh`.
 
-**Enabling the local reviewer.** Set these in `~/.config/claude-reviewers/.env`:
-
-```bash
-LOCAL_REVIEW_SCRIPT=/home/peter/src/qwen-2.5-localreview/review.py
-LOCAL_REVIEW_VENV=/home/peter/src/qwen-2.5-localreview/.venv
-```
-
-Remove or comment out to disable. No other changes needed beyond adding the `call_local` function to `review-external.sh` (see `integration/integration-guide.md`).
+**Enabling the local reviewer.** See `integration/integration-guide.md` for the full list of changes needed in `review-external.sh` and `~/.config/claude-reviewers/.env`. The `.env` entries are managed by zat.env's install process, not by this project.
 
 **Behavior.** The reviewer runs in parallel with cloud providers. It does not block or slow down OpenAI/Google reviews. If the GPU is busy or vLLM OOMs, the review completes without local findings (fail-open).
 
