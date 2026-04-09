@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Tests for review.py guard logic and output contract.
-# Tests 1-2 and 4 run without a GPU or model (~0.5s).
+# Tests 1-2 and 6 run without a GPU or model (~0.5s).
 # Test 3 requires the model to be downloaded and a GPU available (~90s).
 #
 # Usage:
@@ -232,6 +232,36 @@ if ${HAS_MODEL}; then
   fi
 else
   echo "  SKIP (model not in HF cache, tokenizer unavailable)"
+fi
+
+# ============================================================
+echo ""
+echo "==> Test 6: fatal error produces structured status line"
+# ============================================================
+
+# Force a fast failure by pointing to a nonexistent model. The tokenizer
+# load fails before any GPU work, so this runs without a GPU.
+echo "You are a reviewer." > "${TEST_DIR}/system6.txt"
+echo "Review this." > "${TEST_DIR}/input6.txt"
+
+STDERR_FILE="${TEST_DIR}/stderr6.txt"
+LOCAL_MODEL="nonexistent/model" "${PYTHON}" "${SCRIPT}" \
+  --system "${TEST_DIR}/system6.txt" \
+  --input "${TEST_DIR}/input6.txt" \
+  2>"${STDERR_FILE}" || true
+
+if grep -q '\[qwen\]' "${STDERR_FILE}"; then
+  pass "fatal error: tagged with [qwen]"
+else
+  fail "fatal error: missing [qwen] tag"
+  echo "    stderr: $(cat "${STDERR_FILE}")"
+fi
+
+if grep -q 'nonexistent/model -- error:' "${STDERR_FILE}"; then
+  pass "fatal error: structured status with model name"
+else
+  fail "fatal error: missing structured status"
+  echo "    stderr: $(cat "${STDERR_FILE}")"
 fi
 
 # ============================================================

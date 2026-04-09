@@ -88,9 +88,10 @@ Add to `~/.config/claude-reviewers/.env` (done automatically by `setup.sh`):
 
 ```bash
 # --- Local (vLLM offline, qwen) ---
-LOCAL_REVIEW_SCRIPT=/home/peter/src/qwen/review.py
-LOCAL_REVIEW_VENV=/home/peter/src/qwen/.venv
+LOCAL_REVIEW_SCRIPT=~/src/qwen-2.5-localreview/review.py
+LOCAL_REVIEW_VENV=~/src/qwen-2.5-localreview/.venv
 #LOCAL_MODEL=Qwen/Qwen2.5-Coder-14B-Instruct-AWQ
+#LOCAL_MAX_MODEL_LEN=32768
 ```
 
 ## Testing

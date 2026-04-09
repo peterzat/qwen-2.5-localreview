@@ -19,6 +19,11 @@ DEFAULT_MODEL = "Qwen/Qwen2.5-Coder-14B-Instruct-AWQ"
 DEFAULT_MAX_MODEL_LEN = 32768
 OUTPUT_RESERVE_TOKENS = 4096
 
+# Module-level sentinels for the fatal error handler. main() writes these
+# before heavy work so the outer except can emit a structured status line.
+_model = DEFAULT_MODEL
+_start = None
+
 
 def truncate_to_fit(tokenizer, system_prompt, user_input, max_model_len):
     """Truncate user_input so system_prompt + user_input + output reserve fits.
@@ -62,7 +67,9 @@ def main() -> int:
         print(f"[{TAG}] Empty input, nothing to review", file=sys.stderr)
         return 0
 
+    global _model, _start
     model = os.environ.get("LOCAL_MODEL", DEFAULT_MODEL)
+    _model = model
     max_model_len = int(os.environ.get("LOCAL_MAX_MODEL_LEN", str(DEFAULT_MAX_MODEL_LEN)))
 
     # Context limit guard: tokenizer-based, accounts for system prompt.
@@ -92,13 +99,29 @@ def main() -> int:
 
     # Load model and run inference.
     start = time.monotonic()
+    _start = start
+
+    # VRAM preflight: warn early if GPU memory looks too low.
+    try:
+        import torch
+        if torch.cuda.is_available():
+            free_gb = torch.cuda.mem_get_info()[0] / (1024 ** 3)
+            if free_gb < 10.0:
+                print(
+                    f"[{TAG}] Warning: {free_gb:.1f}GB VRAM free, need ~10GB."
+                    f" May OOM. Try: LOCAL_MAX_MODEL_LEN=8192",
+                    file=sys.stderr,
+                )
+    except Exception:
+        pass
 
     from vllm import LLM, SamplingParams
 
     llm = LLM(
         model=model,
         max_model_len=max_model_len,
-        gpu_memory_utilization=0.95,
+        gpu_memory_utilization=0.90,
+        enforce_eager=True,
     )
 
     params = SamplingParams(temperature=0.2, max_tokens=4096)
@@ -134,5 +157,21 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as e:
-        print(f"[{TAG}] Fatal error: {e}", file=sys.stderr)
+        elapsed = time.monotonic() - _start if _start is not None else 0
+        # Detect CUDA OOM for an actionable message.
+        is_oom = "CUDA out of memory" in str(e) or "OutOfMemoryError" in type(e).__name__
+        if not is_oom:
+            try:
+                import torch
+                is_oom = isinstance(e, torch.cuda.OutOfMemoryError)
+            except Exception:
+                pass
+        if is_oom:
+            msg = "CUDA OOM. Try: LOCAL_MAX_MODEL_LEN=16384"
+        else:
+            msg = str(e)
+        print(
+            f"[{TAG}] {_model} -- error: {msg} -- 0 in / 0 out -- {elapsed:.0f}s",
+            file=sys.stderr,
+        )
         sys.exit(0)  # fail-open
