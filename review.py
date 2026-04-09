@@ -14,7 +14,7 @@ os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
 import logging
 logging.disable(logging.WARNING)
 
-TAG = "qwen-2.5-localreview"
+TAG = "qwen"
 DEFAULT_MODEL = "Qwen/Qwen2.5-Coder-14B-Instruct-AWQ"
 DEFAULT_MAX_MODEL_LEN = 32768
 CHARS_PER_TOKEN = 3.5

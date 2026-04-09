@@ -6,7 +6,7 @@ Local adversarial code reviewer using Qwen2.5-Coder-14B-Instruct-AWQ via vLLM of
 
 This project is tightly coupled to:
 
-- **zat.env's usage patterns**: adversarial code review via `review-external.sh`, fail-open provider model, `(qwen-2.5-localreview)` finding tags, stdin diff / stdout findings / stderr status contract.
+- **zat.env's usage patterns**: adversarial code review via `review-external.sh`, fail-open provider model, `(qwen)` finding tags, stdin diff / stdout findings / stderr status contract.
 - **Target machine configuration**: RTX 4000 SFF Ada (20GB VRAM, 70W TDP), CUDA 13.x, 64GB DDR4, fast NVMe, Python 3.10, Ubuntu Linux.
 
 It may be portable to similar setups but those are the intentional design constraints, not accidents.

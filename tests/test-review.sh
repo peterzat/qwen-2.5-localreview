@@ -162,7 +162,7 @@ DIFF
   fi
 
   # Check stderr has token counts.
-  if grep -q "qwen-2.5-localreview" "${STDERR_FILE}"; then
+  if grep -q "qwen" "${STDERR_FILE}"; then
     pass "live inference: status on stderr"
   else
     fail "live inference: missing status on stderr"

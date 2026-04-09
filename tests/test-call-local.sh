@@ -47,7 +47,7 @@ else
   fail "nonexistent script: unexpected stdout: $(cat "${STDOUT_FILE}")"
 fi
 
-if grep -q "qwen-2.5-localreview" "${STDERR_FILE}"; then
+if grep -q "qwen" "${STDERR_FILE}"; then
   pass "nonexistent script: warning on stderr"
 else
   fail "nonexistent script: no warning on stderr"
@@ -117,18 +117,18 @@ STDOUT_FILE="${TEST_DIR}/stdout3.txt"
 STDERR_FILE="${TEST_DIR}/stderr3.txt"
 call_local > "${STDOUT_FILE}" 2>"${STDERR_FILE}" || true
 
-# Findings should be tagged with (qwen-2.5-localreview).
-if grep -q '(qwen-2.5-localreview)' "${STDOUT_FILE}"; then
-  pass "tagging: findings tagged with (qwen-2.5-localreview)"
+# Findings should be tagged with (qwen).
+if grep -q '(qwen)' "${STDOUT_FILE}"; then
+  pass "tagging: findings tagged with (qwen)"
 else
   fail "tagging: findings not tagged"
   echo "    stdout: $(cat "${STDOUT_FILE}")"
 fi
 
 # Severity should be preserved.
-if grep -q '^\[BLOCK\] (qwen-2.5-localreview)' "${STDOUT_FILE}" && \
-   grep -q '^\[WARN\] (qwen-2.5-localreview)' "${STDOUT_FILE}" && \
-   grep -q '^\[NOTE\] (qwen-2.5-localreview)' "${STDOUT_FILE}"; then
+if grep -q '^\[BLOCK\] (qwen)' "${STDOUT_FILE}" && \
+   grep -q '^\[WARN\] (qwen)' "${STDOUT_FILE}" && \
+   grep -q '^\[NOTE\] (qwen)' "${STDOUT_FILE}"; then
   pass "tagging: all severity levels preserved"
 else
   fail "tagging: missing severity levels"
@@ -147,11 +147,53 @@ else
   fail "tagging: 'No issues found' leaked to stdout"
 fi
 
-# Cost/timing line should be on stderr.
-if grep -qE '\$0\.00' "${STDERR_FILE}"; then
-  pass "tagging: cost line on stderr"
+# No duplicate cost/timing line from call_local (review.py emits its own).
+COST_LINES=$(grep -cE '\$0\.00' "${STDERR_FILE}" || true)
+if [[ "${COST_LINES}" -eq 0 ]]; then
+  pass "tagging: no spurious cost line"
 else
-  fail "tagging: missing cost line on stderr"
+  fail "tagging: unexpected cost line on stderr (duplicate)"
+fi
+
+# ============================================================
+echo ""
+echo "==> Test 4: timeout on hung script"
+# ============================================================
+
+HANG_SCRIPT="${TEST_DIR}/hang_review.py"
+cat > "${HANG_SCRIPT}" <<'PY'
+#!/usr/bin/env python3
+import time
+time.sleep(300)
+PY
+
+LOCAL_REVIEW_SCRIPT="${HANG_SCRIPT}"
+export LOCAL_REVIEW_SCRIPT
+TIMEOUT=2
+export TIMEOUT
+
+STDOUT_FILE="${TEST_DIR}/stdout4.txt"
+STDERR_FILE="${TEST_DIR}/stderr4.txt"
+START=$(date +%s)
+call_local > "${STDOUT_FILE}" 2>"${STDERR_FILE}" || true
+ELAPSED=$(( $(date +%s) - START ))
+
+if [[ "${ELAPSED}" -lt 10 ]]; then
+  pass "timeout: killed within timeout"
+else
+  fail "timeout: took ${ELAPSED}s (expected < 10)"
+fi
+
+if [[ ! -s "${STDOUT_FILE}" ]]; then
+  pass "timeout: no findings on stdout"
+else
+  fail "timeout: unexpected stdout: $(cat "${STDOUT_FILE}")"
+fi
+
+if grep -q "qwen" "${STDERR_FILE}"; then
+  pass "timeout: warning on stderr"
+else
+  fail "timeout: no warning on stderr"
 fi
 
 # ============================================================

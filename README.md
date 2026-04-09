@@ -49,7 +49,7 @@ Remove or comment out to disable. No other changes needed beyond adding the `cal
 
 **Behavior.** The reviewer runs in parallel with cloud providers. It does not block or slow down OpenAI/Google reviews. If the GPU is busy or vLLM OOMs, the review completes without local findings (fail-open).
 
-**Finding tags.** The `(qwen-2.5-localreview)` tag on findings distinguishes them from `(openai)` and `(google)` findings. The 14B model produces more false positives than cloud models; treat `(qwen-2.5-localreview)` findings as a second opinion, not authoritative.
+**Finding tags.** The `(qwen)` tag on findings distinguishes them from `(openai)` and `(google)` findings. The 14B model produces more false positives than cloud models; treat `(qwen)` findings as a second opinion, not authoritative.
 
 **Testing in isolation.**
 

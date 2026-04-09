@@ -1,4 +1,4 @@
-# Integration Guide: Adding qwen-2.5-localreview to review-external.sh
+# Integration Guide: Adding qwen to review-external.sh
 
 Apply these changes to `~/src/zat.env/bin/review-external.sh` from a zat.env session.
 
@@ -87,9 +87,9 @@ for outfile in "${OPENAI_OUT}" "${GOOGLE_OUT}" "${LOCAL_OUT}"; do
 Add to `~/.config/claude-reviewers/.env` (done automatically by `setup.sh`):
 
 ```bash
-# --- Local (vLLM offline, qwen-2.5-localreview) ---
-LOCAL_REVIEW_SCRIPT=/home/peter/src/qwen-2.5-localreview/review.py
-LOCAL_REVIEW_VENV=/home/peter/src/qwen-2.5-localreview/.venv
+# --- Local (vLLM offline, qwen) ---
+LOCAL_REVIEW_SCRIPT=/home/peter/src/qwen/review.py
+LOCAL_REVIEW_VENV=/home/peter/src/qwen/.venv
 #LOCAL_MODEL=Qwen/Qwen2.5-Coder-14B-Instruct-AWQ
 ```
 
