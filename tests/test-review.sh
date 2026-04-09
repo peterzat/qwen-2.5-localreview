@@ -2,8 +2,12 @@
 set -euo pipefail
 
 # Tests for review.py guard logic and output contract.
-# Tests 1-2 and 4 run without a GPU or model.
-# Test 3 requires the model to be downloaded and a GPU available.
+# Tests 1-2 and 4 run without a GPU or model (~0.5s).
+# Test 3 requires the model to be downloaded and a GPU available (~90s).
+#
+# Usage:
+#   tests/test-review.sh          # fast tests only (default)
+#   tests/test-review.sh --full   # include GPU inference test
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCRIPT="${REPO_DIR}/review.py"
@@ -14,6 +18,11 @@ FAILS=0
 TOTAL=0
 pass() { TOTAL=$((TOTAL + 1)); printf '  ok   %s\n' "$1"; }
 fail() { TOTAL=$((TOTAL + 1)); FAILS=$((FAILS + 1)); printf '  FAIL %s\n' "$1"; }
+
+RUN_FULL=false
+if [[ "${1:-}" == "--full" ]]; then
+  RUN_FULL=true
+fi
 
 if [[ ! -x "${PYTHON}" ]]; then
   echo "ERROR: venv not found at ${VENV}. Run setup.sh first."
@@ -87,7 +96,9 @@ if [[ -d "${HF_CACHE_DIR}" ]]; then
   HAS_MODEL=true
 fi
 
-if ${HAS_GPU} && ${HAS_MODEL}; then
+if ! ${RUN_FULL}; then
+  echo "  SKIP (use --full to run GPU inference test)"
+elif ${HAS_GPU} && ${HAS_MODEL}; then
   # System prompt from review-external.sh.
   cat > "${TEST_DIR}/system.txt" <<'SYSPROMPT'
 You are a Principal Software Engineer performing an adversarial code review.
