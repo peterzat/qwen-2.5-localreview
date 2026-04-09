@@ -124,7 +124,13 @@ def main() -> int:
         enforce_eager=True,
     )
 
-    params = SamplingParams(temperature=0.2, max_tokens=4096)
+    params = SamplingParams(
+        temperature=0.2,
+        top_p=0.8,
+        top_k=20,
+        repetition_penalty=1.05,
+        max_tokens=4096,
+    )
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_input},
