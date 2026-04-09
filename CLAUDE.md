@@ -17,7 +17,9 @@ This project lives at `~/src/qwen-2.5-localreview`. Consumer projects (zat.env, 
 
 ## Boundary with zat.env
 
-This project never modifies zat.env. All integration (changes to `review-external.sh`, test updates, lint checks) is developed, integrated, and tested from within zat.env itself. This project provides the inference script and integration guide; zat.env owns the consumer side.
+This project never modifies zat.env. All integration (changes to `review-external.sh`, test updates, lint checks, `.env` configuration) is developed, integrated, and tested from within zat.env itself. This project provides the inference script and integration guide; zat.env owns the consumer side.
+
+This includes `~/.config/claude-reviewers/.env`, which is created and managed by zat.env's install process. This project must not read, write, or append to that file. The integration guide documents what entries zat.env should add.
 
 ## Conventions
 

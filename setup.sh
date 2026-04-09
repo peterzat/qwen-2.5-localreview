@@ -2,13 +2,12 @@
 set -euo pipefail
 
 # Idempotent setup for qwen-2.5-localreview.
-# Creates venv, installs vLLM, downloads model, configures reviewer env.
+# Creates venv, installs vLLM, downloads model, configures git hooks.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV_DIR="${SCRIPT_DIR}/.venv"
 MODEL="Qwen/Qwen2.5-Coder-14B-Instruct-AWQ"
 VLLM_VERSION="0.19.0"
-REVIEWER_ENV="${HOME}/.config/claude-reviewers/.env"
 
 # --- Step 1: Create venv ---
 
@@ -51,25 +50,7 @@ snapshot_download('${MODEL}')
   echo "[ok] Model downloaded"
 fi
 
-# --- Step 4: Configure reviewer env ---
-
-mkdir -p "$(dirname "${REVIEWER_ENV}")"
-
-if [[ -f "${REVIEWER_ENV}" ]] && grep -q "LOCAL_REVIEW_SCRIPT" "${REVIEWER_ENV}"; then
-  echo "[ok] LOCAL_REVIEW_SCRIPT already in ${REVIEWER_ENV}"
-else
-  echo "[..] Adding local reviewer config to ${REVIEWER_ENV}..."
-  cat >> "${REVIEWER_ENV}" <<EOF
-
-# --- Local (vLLM offline, qwen-2.5-localreview) ---
-LOCAL_REVIEW_SCRIPT=${SCRIPT_DIR}/review.py
-LOCAL_REVIEW_VENV=${VENV_DIR}
-#LOCAL_MODEL=${MODEL}
-EOF
-  echo "[ok] Config added"
-fi
-
-# --- Step 5: Configure git hooks ---
+# --- Step 4: Configure git hooks ---
 
 if [[ "$(git -C "${SCRIPT_DIR}" config --get core.hooksPath 2>/dev/null)" == ".githooks" ]]; then
   echo "[ok] git hooks configured"
@@ -84,8 +65,7 @@ echo ""
 echo "Setup complete."
 echo "  venv:  ${VENV_DIR}"
 echo "  model: ${MODEL} (in ~/.cache/huggingface)"
-echo "  config: ${REVIEWER_ENV}"
 echo ""
 echo "Next steps:"
-echo "  1. Add call_local to review-external.sh (see integration/integration-guide.md)"
+echo "  1. Integrate with review-external.sh (see integration/integration-guide.md)"
 echo "  2. Test: .venv/bin/python review.py --system <file> --input <file>"
