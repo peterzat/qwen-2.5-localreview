@@ -113,6 +113,24 @@ CONFIGS: dict[str, InferenceConfig] = {
         },
         sampling_kwargs=DEFAULT_SAMPLING,
     ),
+    # Stage 4: FP8-dynamic 14B weights variant. Same Qwen2.5-Coder-14B
+    # architecture as the AWQ baseline; weights stored as FP8 (E4M3,
+    # ~14 GB) with dynamic per-token activation quantization. Compared
+    # to AWQ INT4 (~7 GB weights), this doubles weight VRAM but uses
+    # Ada's hardware FP8 tensor cores natively. Reduced max_model_len
+    # to 16384 because 14 GB weights + 32K FP8 KV (~3 GB) + activations
+    # would exceed the 0.90 cache pool budget on this 20 GB card.
+    "stage4-14b-fp8": InferenceConfig(
+        name="stage4-14b-fp8",
+        model="RedHatAI/Qwen2.5-Coder-14B-Instruct-FP8-dynamic",
+        max_model_len=8192,
+        llm_kwargs={
+            "gpu_memory_utilization": 0.90,
+            "enforce_eager": True,
+            "kv_cache_dtype": "fp8_e4m3",
+        },
+        sampling_kwargs=DEFAULT_SAMPLING,
+    ),
 }
 
 

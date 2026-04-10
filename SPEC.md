@@ -39,11 +39,11 @@ is already optimal and record that finding in CLAUDE.md.
       tested `max_model_len`" record with the OOM evidence), and the outcome is
       recorded as "promoted to default," "documented as opt-in via `LOCAL_MODEL`,"
       or "rejected" with reason.
-- [ ] Stage 4 (FP8-dynamic 14B weights variant) has been run, or explicitly
+- [x] Stage 4 (FP8-dynamic 14B weights variant) has been run, or explicitly
       skipped with a recorded reason (e.g., "Stage 2 vLLM upgrade not adopted so
       FP8 weight kernels still unavailable" or "exact HF repo not found"). A skip
       is a valid stage outcome as long as the reason is recorded.
-- [ ] Stages progressed strictly sequentially: each stage's bench numbers and
+- [x] Stages progressed strictly sequentially: each stage's bench numbers and
       eval side-by-side are captured before the next stage begins, visible as
       either per-stage commits or a per-stage entry in a results log. The
       configuration each stage starts from is the winning config from the prior
@@ -138,4 +138,4 @@ committed eval outputs).
 - *Fail-open contract is non-negotiable.* Any experiment that breaks the exit-0-
   on-error path is a regression, not an experiment.
 
-<!-- SPEC_META: {"date":"2026-04-10","title":"Ada-aware inference experiments (abstract-yawning-raven)","criteria_total":13,"criteria_met":7} -->
+<!-- SPEC_META: {"date":"2026-04-10","title":"Ada-aware inference experiments (abstract-yawning-raven)","criteria_total":13,"criteria_met":9} -->
