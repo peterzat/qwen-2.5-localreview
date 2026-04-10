@@ -29,7 +29,7 @@ is already optimal and record that finding in CLAUDE.md.
       commit message as either "adopted as new winning config," "reverted (quality
       regression)," or "reverted (load failure)" with the evidence that drove the
       decision.
-- [ ] Stage 2 (vLLM upgrade evaluation) has been run: a throwaway venv was used
+- [x] Stage 2 (vLLM upgrade evaluation) has been run: a throwaway venv was used
       (primary `.venv/` untouched unless the upgrade was adopted), bench+eval
       numbers were captured, and the outcome is recorded as either "adopted"
       (with `setup.sh` pin updated and reason in commit message) or "discarded"
@@ -138,4 +138,4 @@ committed eval outputs).
 - *Fail-open contract is non-negotiable.* Any experiment that breaks the exit-0-
   on-error path is a regression, not an experiment.
 
-<!-- SPEC_META: {"date":"2026-04-10","title":"Ada-aware inference experiments (abstract-yawning-raven)","criteria_total":13,"criteria_met":5} -->
+<!-- SPEC_META: {"date":"2026-04-10","title":"Ada-aware inference experiments (abstract-yawning-raven)","criteria_total":13,"criteria_met":6} -->
