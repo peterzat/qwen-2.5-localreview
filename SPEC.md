@@ -24,7 +24,7 @@ is already optimal and record that finding in CLAUDE.md.
       FP16 KV + `enforce_eager=True` + `gpu_memory_utilization=0.90`) exists as
       `tests/results/baseline.md` plus recorded bench numbers (committed file or
       commit message table). This baseline is the reference for every later stage.
-- [ ] Stage 1 (FP8 KV cache on current AWQ model) has been run: bench numbers and
+- [x] Stage 1 (FP8 KV cache on current AWQ model) has been run: bench numbers and
       `tests/results/stage1-*.md` exist, and the stage outcome is recorded in the
       commit message as either "adopted as new winning config," "reverted (quality
       regression)," or "reverted (load failure)" with the evidence that drove the
@@ -138,4 +138,4 @@ committed eval outputs).
 - *Fail-open contract is non-negotiable.* Any experiment that breaks the exit-0-
   on-error path is a regression, not an experiment.
 
-<!-- SPEC_META: {"date":"2026-04-10","title":"Ada-aware inference experiments (abstract-yawning-raven)","criteria_total":13,"criteria_met":4} -->
+<!-- SPEC_META: {"date":"2026-04-10","title":"Ada-aware inference experiments (abstract-yawning-raven)","criteria_total":13,"criteria_met":5} -->

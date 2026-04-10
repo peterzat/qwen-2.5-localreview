@@ -17,6 +17,16 @@ from typing import Any
 # Stay quiet like review.py.
 os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
 
+# vLLM's FlashInfer backend (used when kv_cache_dtype="fp8_e4m3" forces a
+# non-default attention path) JIT-compiles kernels via ninja. ninja is
+# pip-installed into .venv/bin, but invoking .venv/bin/python directly does
+# not put that directory on PATH the way `source .venv/bin/activate` would,
+# so subprocess.run("ninja", ...) inside flashinfer fails. Prepend the
+# venv's bin dir to PATH so any tool installed there is reachable.
+_venv_bin = os.path.dirname(os.sys.executable)
+if _venv_bin and _venv_bin not in os.environ.get("PATH", "").split(os.pathsep):
+    os.environ["PATH"] = _venv_bin + os.pathsep + os.environ.get("PATH", "")
+
 REPO_DIR = Path(__file__).resolve().parent.parent
 FIXTURES_DIR = REPO_DIR / "tests" / "fixtures"
 DIFFS_DIR = FIXTURES_DIR / "diffs"
