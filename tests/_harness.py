@@ -85,6 +85,12 @@ CONFIGS: dict[str, InferenceConfig] = {
         sampling_kwargs=DEFAULT_SAMPLING,
     ),
     # Stage 3: 32B AWQ at reduced context, on top of Stage 1's FP8 KV.
+    # These two configs represent the spec's literal Stage 3 test points.
+    # Both fail to load on a 20 GB Ada card; see tests/results/stage3-
+    # 32b.md for the chronological investigation. vLLM's own profiler
+    # reports a maximum sustainable max_model_len of 2336 tokens for
+    # 32B-AWQ on this hardware -- below the project's minimum usable
+    # context (system prompt + diff + output reserve >> 2336).
     "stage3-32b-16k": InferenceConfig(
         name="stage3-32b-16k",
         model="Qwen/Qwen2.5-Coder-32B-Instruct-AWQ",

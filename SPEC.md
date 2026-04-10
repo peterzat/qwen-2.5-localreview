@@ -34,7 +34,7 @@ is already optimal and record that finding in CLAUDE.md.
       numbers were captured, and the outcome is recorded as either "adopted"
       (with `setup.sh` pin updated and reason in commit message) or "discarded"
       (with reason). If discarded, the throwaway venv is removed.
-- [ ] Stage 3 (`Qwen/Qwen2.5-Coder-32B-Instruct-AWQ` at reduced context) has been
+- [x] Stage 3 (`Qwen/Qwen2.5-Coder-32B-Instruct-AWQ` at reduced context) has been
       run: bench+eval numbers exist (or an explicit "failed to load at every
       tested `max_model_len`" record with the OOM evidence), and the outcome is
       recorded as "promoted to default," "documented as opt-in via `LOCAL_MODEL`,"
@@ -138,4 +138,4 @@ committed eval outputs).
 - *Fail-open contract is non-negotiable.* Any experiment that breaks the exit-0-
   on-error path is a regression, not an experiment.
 
-<!-- SPEC_META: {"date":"2026-04-10","title":"Ada-aware inference experiments (abstract-yawning-raven)","criteria_total":13,"criteria_met":6} -->
+<!-- SPEC_META: {"date":"2026-04-10","title":"Ada-aware inference experiments (abstract-yawning-raven)","criteria_total":13,"criteria_met":7} -->
