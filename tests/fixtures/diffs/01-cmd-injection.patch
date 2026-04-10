@@ -1,0 +1,24 @@
+=== DIFF ===
+diff --git a/tools/runner.py b/tools/runner.py
+new file mode 100644
+--- /dev/null
++++ b/tools/runner.py
+@@ -0,0 +1,18 @@
++"""Small helper to run user-supplied build commands."""
++import os
++import sys
++
++
++def run_build(target: str) -> int:
++    """Invoke the build script for the given target."""
++    cmd = f"./build.sh {target}"
++    return os.system(cmd)
++
++
++def main() -> int:
++    target = sys.argv[1] if len(sys.argv) > 1 else "all"
++    return run_build(target)
++
++
++if __name__ == "__main__":
++    sys.exit(main())

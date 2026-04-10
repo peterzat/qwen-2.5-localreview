@@ -1,0 +1,32 @@
+=== DIFF ===
+diff --git a/web/files.py b/web/files.py
+index 3333333..4444444 100644
+--- a/web/files.py
++++ b/web/files.py
+@@ -5,11 +5,21 @@ from flask import Blueprint, request, send_file, abort
+
+ bp = Blueprint("files", __name__)
+
+-UPLOAD_DIR = "/var/app/uploads"
++UPLOAD_DIR = "/var/app/uploads"
+
+
+ @bp.route("/download")
+ def download():
+     name = request.args.get("name", "")
+-    if not name or "/" in name or ".." in name:
+-        abort(400)
+-    return send_file(os.path.join(UPLOAD_DIR, name))
++    if not name:
++        abort(400)
++    # Build the full path and send it.
++    path = os.path.join(UPLOAD_DIR, name)
++    return send_file(path)
++
++
++@bp.route("/upload", methods=["POST"])
++def upload():
++    f = request.files["file"]
++    dest = os.path.join(UPLOAD_DIR, f.filename)
++    f.save(dest)
++    return {"ok": True}

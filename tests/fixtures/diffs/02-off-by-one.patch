@@ -1,0 +1,24 @@
+=== DIFF ===
+diff --git a/src/pagination.py b/src/pagination.py
+index 1111111..2222222 100644
+--- a/src/pagination.py
++++ b/src/pagination.py
+@@ -10,12 +10,14 @@ def paginate(items, page, page_size):
+     Return a slice of `items` for the given 1-indexed page number.
+     page_size must be > 0. Pages beyond the end return [].
+     """
+-    if page < 1 or page_size < 1:
++    if page < 1 or page_size <= 0:
+         raise ValueError("page and page_size must be positive")
+
+-    start = (page - 1) * page_size
+-    end = start + page_size
+-    return items[start:end]
++    # Convert to 0-indexed offset.
++    start = page * page_size
++    end = start + page_size + 1
++    total = len(items)
++    return items[start:min(end, total)]
+
+
+ def page_count(items, page_size):

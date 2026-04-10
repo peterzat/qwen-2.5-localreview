@@ -8,19 +8,19 @@ is already optimal and record that finding in CLAUDE.md.
 
 ### Acceptance Criteria
 
-- [ ] A benchmark harness at `tests/bench.py` loads the configured model, runs a
+- [x] A benchmark harness at `tests/bench.py` loads the configured model, runs a
       fixed corpus of 3-5 representative diffs checked in under `tests/fixtures/diffs/`,
       and reports per-diff prefill tokens/s, decode tokens/s, peak VRAM (via
       `torch.cuda.max_memory_allocated`), and wall time. Takes `--config <name>`
       so all stages reuse it.
-- [ ] An eval harness at `tests/eval.py` runs the same fixed corpus and writes raw
+- [x] An eval harness at `tests/eval.py` runs the same fixed corpus and writes raw
       model outputs to `tests/results/<config-name>.md` (one file per measured
       config) so configs can be compared side-by-side by reading committed files.
-- [ ] Both harnesses are gated behind `--full` (or an equivalent slow-test marker)
+- [x] Both harnesses are gated behind `--full` (or an equivalent slow-test marker)
       so the existing pre-push hook path completes in under 2 seconds. Running
       `tests/test-review.sh` and `tests/test-call-local.sh` without `--full` still
       passes with the new code present.
-- [ ] A baseline measurement run for the current production config (14B AWQ +
+- [x] A baseline measurement run for the current production config (14B AWQ +
       FP16 KV + `enforce_eager=True` + `gpu_memory_utilization=0.90`) exists as
       `tests/results/baseline.md` plus recorded bench numbers (committed file or
       commit message table). This baseline is the reference for every later stage.
@@ -138,4 +138,4 @@ committed eval outputs).
 - *Fail-open contract is non-negotiable.* Any experiment that breaks the exit-0-
   on-error path is a regression, not an experiment.
 
-<!-- SPEC_META: {"date":"2026-04-10","title":"Ada-aware inference experiments (abstract-yawning-raven)","criteria_total":13,"criteria_met":0} -->
+<!-- SPEC_META: {"date":"2026-04-10","title":"Ada-aware inference experiments (abstract-yawning-raven)","criteria_total":13,"criteria_met":4} -->
