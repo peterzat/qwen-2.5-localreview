@@ -37,34 +37,6 @@ _model = DEFAULT_MODEL
 _start = None
 
 
-def build_llm_kwargs(model: str, max_model_len: int) -> dict:
-    """Build the kwargs for vllm.LLM() based on LOCAL_INFERENCE_MODE.
-
-    Default mode includes ``kv_cache_dtype="fp8_e4m3"``, the Stage 1
-    winning config from the abstract-yawning-raven inference experiments
-    (commit b47ae08): +36% prefill TPS, +58% decode TPS, ~0.9 GB freed
-    VRAM, and at least equal review quality on every fixture vs the
-    pre-Stage-1 baseline. The FP8 KV path uses Ada's 4th-gen tensor
-    cores via vLLM's FlashInfer attention backend.
-
-    ``LOCAL_INFERENCE_MODE=legacy`` restores the exact pre-Stage-1
-    arguments (no kv_cache_dtype, equivalent to FP16 KV cache via the
-    default Flash Attention backend). The toggle exists so the legacy
-    path can be re-selected for one-off comparison or as an escape hatch
-    if a future regression is suspected.
-    """
-    kwargs = {
-        "model": model,
-        "max_model_len": max_model_len,
-        "gpu_memory_utilization": 0.90,
-        "enforce_eager": True,
-    }
-    mode = os.environ.get("LOCAL_INFERENCE_MODE", "default")
-    if mode != "legacy":
-        kwargs["kv_cache_dtype"] = "fp8_e4m3"
-    return kwargs
-
-
 def truncate_to_fit(tokenizer, system_prompt, user_input, max_model_len):
     """Truncate user_input so system_prompt + user_input + output reserve fits.
 
@@ -157,7 +129,19 @@ def main() -> int:
 
     from vllm import LLM, SamplingParams
 
-    llm = LLM(**build_llm_kwargs(model, max_model_len))
+    # 14B AWQ INT4 weights with FP8 KV cache via Ada's 4th-gen tensor
+    # cores. Adopted as the default in commit c53d898 from the
+    # abstract-yawning-raven inference experiments (Stage 1, b47ae08):
+    # +36% prefill TPS, +58% decode TPS, ~0.9 GB freed VRAM vs the
+    # pre-Stage-1 AWQ + FP16 KV path. enforce_eager=True is retained
+    # from commit 8321af1 to avoid a CUDA-graph-induced OOM.
+    llm = LLM(
+        model=model,
+        max_model_len=max_model_len,
+        gpu_memory_utilization=0.90,
+        enforce_eager=True,
+        kv_cache_dtype="fp8_e4m3",
+    )
 
     params = SamplingParams(
         temperature=0.2,

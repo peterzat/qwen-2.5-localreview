@@ -57,26 +57,14 @@ echo "Review this: eval(input())" > /tmp/test-input
 
 ## Inference configuration
 
-The default inference path is **14B AWQ INT4 weights with FP8 KV cache
-(`kv_cache_dtype="fp8_e4m3"`)**, which uses Ada's 4th-generation tensor
-cores for the attention KV path via vLLM's FlashInfer backend. This is
-the Stage 1 winning configuration from the
-`abstract-yawning-raven` inference experiments (commit `b47ae08`):
+Runs **14B AWQ INT4 weights with FP8 KV cache (`kv_cache_dtype="fp8_e4m3"`)**,
+which uses Ada's 4th-generation tensor cores for the attention KV path
+via vLLM's FlashInfer backend. This is the winning configuration from
+the `abstract-yawning-raven` inference experiments (commit `b47ae08`):
 +36% prefill TPS, +58% decode TPS, ~0.9 GB freed VRAM, and at least
-equal review quality on every fixture vs the pre-Stage-1 baseline.
-
-The legacy path (AWQ INT4 + FP16 KV cache, no `kv_cache_dtype`) is
-available behind an environment variable:
-
-```bash
-LOCAL_INFERENCE_MODE=legacy .venv/bin/python review.py ...
-```
-
-Use this only for one-off comparison or as an escape hatch if a future
-regression is suspected. Any other value of `LOCAL_INFERENCE_MODE`
-(including unset, `default`, or a typo) selects the FP8 KV default --
-silent fallback to legacy is intentionally not supported. The toggle
-is exercised by Test 7 in `tests/test-review.sh`.
+equal review quality on every fixture vs the prior AWQ + FP16 KV
+configuration. The full investigation (baseline + 4 stages) is in the
+git history and `tests/results/`.
 
 ## Environment Variables
 
@@ -84,6 +72,5 @@ is exercised by Test 7 in `tests/test-review.sh`.
 |---|---|---|
 | `LOCAL_MODEL` | `Qwen/Qwen2.5-Coder-14B-Instruct-AWQ` | HuggingFace model ID |
 | `LOCAL_MAX_MODEL_LEN` | `32768` | Max context length in tokens |
-| `LOCAL_INFERENCE_MODE` | (unset, behaves as `default`) | `legacy` restores AWQ INT4 + FP16 KV exactly. Any other value selects the FP8 KV default. |
 | `LOCAL_REVIEW_SCRIPT` | (none) | Absolute path to `review.py` |
 | `LOCAL_REVIEW_VENV` | (none) | Absolute path to project `.venv` |

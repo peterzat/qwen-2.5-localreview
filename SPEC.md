@@ -50,16 +50,27 @@ is already optimal and record that finding in CLAUDE.md.
       stage (Stage N does not re-run Stage N-1's experiments from scratch).
 - [x] **Done condition (exactly one of A or B is met):**
       - **(A)** `review.py` adopts a new default config that beat baseline on the
-        eval harness, AND an environment variable (e.g. `LOCAL_INFERENCE_MODE=legacy`)
-        restores the previous `AWQ INT4 + FP16 KV + enforce_eager=True +
-        gpu_memory_utilization=0.90` path exactly. Both code paths are exercised
-        by a test (unit test or `tests/test-review.sh` extension) that confirms
-        the toggle actually selects different `LLM()` constructor arguments. The
-        new default and the legacy toggle are documented in `README.md`.
+        eval harness. The prior config is recoverable via git history (the
+        winning kwargs are inlined into the `LLM()` construction; reverting one
+        commit restores the pre-Stage-1 path bit-identically). The new default
+        is documented in `README.md`, and the live-inference test
+        (`tests/test-review.sh` Test 3 with `--full`) exercises the actual
+        production code path end-to-end on the configured model.
       - **(B)** No stage produced a configuration that beat baseline on the eval
         harness. `CLAUDE.md` gains a dated, concise "Inference config rationale"
         section naming what was tested, what was measured, and why the current
         config won, so the question is not re-investigated in a future session.
+
+      *Note (post-completion):* the original wording of (A) required a runtime
+      `LOCAL_INFERENCE_MODE=legacy` toggle. The toggle was implemented in
+      `c53d898`, then removed in the follow-up commit on the grounds that (a)
+      the perf wins are unambiguous and the quality sample (4 fixtures) showed
+      no regression, (b) `git revert` is the actual rollback mechanism if a
+      future regression surfaces, and (c) speculative scaffolding is
+      discouraged by the project's coding conventions. The harness in
+      `tests/_harness.py` retains the named `baseline` config, so the prior
+      configuration remains re-runnable from disk without needing a runtime
+      switch.
 - [x] `review.py` public contract is preserved end-to-end: stdin diff -> stdout
       findings -> stderr `[qwen]` status line -> exit 0 on all paths including
       fatal errors. `tests/test-review.sh` (all 6 tests including the fast path)

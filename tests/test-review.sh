@@ -266,61 +266,6 @@ fi
 
 # ============================================================
 echo ""
-echo "==> Test 7: LOCAL_INFERENCE_MODE toggle changes LLM kwargs"
-# ============================================================
-
-# Confirms the Stage 1 winning config (fp8 KV) is the default and that
-# LOCAL_INFERENCE_MODE=legacy restores the exact pre-Stage-1 arguments.
-# Imports build_llm_kwargs directly so the check runs without loading
-# vLLM and stays in the fast pre-push path.
-
-unset LOCAL_INFERENCE_MODE
-PYTHONPATH="${REPO_DIR}" "${PYTHON}" - <<'PY'
-import os
-os.environ.pop("LOCAL_INFERENCE_MODE", None)
-from review import build_llm_kwargs
-
-default = build_llm_kwargs("foo/bar", 32768)
-assert default.get("kv_cache_dtype") == "fp8_e4m3", \
-    f"default mode should use fp8 KV; got {default}"
-assert default["gpu_memory_utilization"] == 0.90
-assert default["enforce_eager"] is True
-assert default["max_model_len"] == 32768
-assert default["model"] == "foo/bar"
-
-os.environ["LOCAL_INFERENCE_MODE"] = "legacy"
-legacy = build_llm_kwargs("foo/bar", 32768)
-assert "kv_cache_dtype" not in legacy, \
-    f"legacy mode must not set kv_cache_dtype; got {legacy}"
-assert legacy["gpu_memory_utilization"] == 0.90
-assert legacy["enforce_eager"] is True
-assert legacy["max_model_len"] == 32768
-
-# Sanity: explicit "default" still selects the fp8 path.
-os.environ["LOCAL_INFERENCE_MODE"] = "default"
-explicit_default = build_llm_kwargs("foo/bar", 32768)
-assert explicit_default.get("kv_cache_dtype") == "fp8_e4m3"
-
-# Sanity: a typo on "legacy" must NOT silently behave like legacy --
-# unknown values fall into the default (fp8) branch.
-os.environ["LOCAL_INFERENCE_MODE"] = "legcy"
-typo = build_llm_kwargs("foo/bar", 32768)
-assert typo.get("kv_cache_dtype") == "fp8_e4m3", \
-    f"unknown mode should default to fp8, got {typo}"
-
-print("OK")
-PY
-TOGGLE_RC=$?
-unset LOCAL_INFERENCE_MODE
-
-if [[ "${TOGGLE_RC}" -eq 0 ]]; then
-  pass "inference mode toggle: default and legacy select different LLM kwargs"
-else
-  fail "inference mode toggle: kwargs check failed (rc=${TOGGLE_RC})"
-fi
-
-# ============================================================
-echo ""
 echo "==> Results: ${TOTAL} checks, ${FAILS} failures"
 # ============================================================
 
