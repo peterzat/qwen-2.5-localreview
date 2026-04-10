@@ -48,7 +48,7 @@ is already optimal and record that finding in CLAUDE.md.
       either per-stage commits or a per-stage entry in a results log. The
       configuration each stage starts from is the winning config from the prior
       stage (Stage N does not re-run Stage N-1's experiments from scratch).
-- [ ] **Done condition (exactly one of A or B is met):**
+- [x] **Done condition (exactly one of A or B is met):**
       - **(A)** `review.py` adopts a new default config that beat baseline on the
         eval harness, AND an environment variable (e.g. `LOCAL_INFERENCE_MODE=legacy`)
         restores the previous `AWQ INT4 + FP16 KV + enforce_eager=True +
@@ -60,15 +60,15 @@ is already optimal and record that finding in CLAUDE.md.
         harness. `CLAUDE.md` gains a dated, concise "Inference config rationale"
         section naming what was tested, what was measured, and why the current
         config won, so the question is not re-investigated in a future session.
-- [ ] `review.py` public contract is preserved end-to-end: stdin diff -> stdout
+- [x] `review.py` public contract is preserved end-to-end: stdin diff -> stdout
       findings -> stderr `[qwen]` status line -> exit 0 on all paths including
       fatal errors. `tests/test-review.sh` (all 6 tests including the fast path)
       and `tests/test-call-local.sh` pass on the final code.
-- [ ] Fail-open behavior verified on the final adopted config: a deliberate OOM
+- [x] Fail-open behavior verified on the final adopted config: a deliberate OOM
       (e.g., oversized fake diff or a known-bad `LOCAL_MAX_MODEL_LEN`) produces a
       structured `[qwen] ... error: ... -- 0 in / 0 out -- Ns` stderr line and
       exit 0, same as before.
-- [ ] No modifications to `~/src/zat.env/` or `~/.config/claude-reviewers/.env`
+- [x] No modifications to `~/src/zat.env/` or `~/.config/claude-reviewers/.env`
       were made. Git status outside this repo is unchanged.
 
 ### Context
@@ -138,4 +138,4 @@ committed eval outputs).
 - *Fail-open contract is non-negotiable.* Any experiment that breaks the exit-0-
   on-error path is a regression, not an experiment.
 
-<!-- SPEC_META: {"date":"2026-04-10","title":"Ada-aware inference experiments (abstract-yawning-raven)","criteria_total":13,"criteria_met":9} -->
+<!-- SPEC_META: {"date":"2026-04-10","title":"Ada-aware inference experiments (abstract-yawning-raven)","criteria_total":13,"criteria_met":13} -->

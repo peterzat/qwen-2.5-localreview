@@ -10,6 +10,18 @@ import time
 # Only structured [qwen] status lines should reach stderr.
 os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
 
+# vLLM's FlashInfer attention backend (selected when kv_cache_dtype is
+# fp8_e4m3, the new default per build_llm_kwargs) JIT-compiles kernels
+# via ninja on first use. ninja is pip-installed at .venv/bin/ninja by
+# the vLLM dependency tree, but invoking .venv/bin/python directly does
+# not put .venv/bin on PATH the way `source .venv/bin/activate` would,
+# so the inner subprocess.run("ninja", ...) inside FlashInfer fails
+# with FileNotFoundError. Prepend the venv's bin dir to PATH so any
+# tool installed there is reachable from spawned subprocesses.
+_venv_bin = os.path.dirname(sys.executable)
+if _venv_bin and _venv_bin not in os.environ.get("PATH", "").split(os.pathsep):
+    os.environ["PATH"] = _venv_bin + os.pathsep + os.environ.get("PATH", "")
+
 # vLLM pulls in torch which is noisy about CUDA.
 import logging
 logging.disable(logging.WARNING)
@@ -23,6 +35,34 @@ OUTPUT_RESERVE_TOKENS = 4096
 # before heavy work so the outer except can emit a structured status line.
 _model = DEFAULT_MODEL
 _start = None
+
+
+def build_llm_kwargs(model: str, max_model_len: int) -> dict:
+    """Build the kwargs for vllm.LLM() based on LOCAL_INFERENCE_MODE.
+
+    Default mode includes ``kv_cache_dtype="fp8_e4m3"``, the Stage 1
+    winning config from the abstract-yawning-raven inference experiments
+    (commit b47ae08): +36% prefill TPS, +58% decode TPS, ~0.9 GB freed
+    VRAM, and at least equal review quality on every fixture vs the
+    pre-Stage-1 baseline. The FP8 KV path uses Ada's 4th-gen tensor
+    cores via vLLM's FlashInfer attention backend.
+
+    ``LOCAL_INFERENCE_MODE=legacy`` restores the exact pre-Stage-1
+    arguments (no kv_cache_dtype, equivalent to FP16 KV cache via the
+    default Flash Attention backend). The toggle exists so the legacy
+    path can be re-selected for one-off comparison or as an escape hatch
+    if a future regression is suspected.
+    """
+    kwargs = {
+        "model": model,
+        "max_model_len": max_model_len,
+        "gpu_memory_utilization": 0.90,
+        "enforce_eager": True,
+    }
+    mode = os.environ.get("LOCAL_INFERENCE_MODE", "default")
+    if mode != "legacy":
+        kwargs["kv_cache_dtype"] = "fp8_e4m3"
+    return kwargs
 
 
 def truncate_to_fit(tokenizer, system_prompt, user_input, max_model_len):
@@ -117,12 +157,7 @@ def main() -> int:
 
     from vllm import LLM, SamplingParams
 
-    llm = LLM(
-        model=model,
-        max_model_len=max_model_len,
-        gpu_memory_utilization=0.90,
-        enforce_eager=True,
-    )
+    llm = LLM(**build_llm_kwargs(model, max_model_len))
 
     params = SamplingParams(
         temperature=0.2,
