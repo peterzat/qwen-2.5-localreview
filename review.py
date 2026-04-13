@@ -29,7 +29,9 @@ logging.disable(logging.WARNING)
 TAG = "qwen"
 DEFAULT_MODEL = "Qwen/Qwen2.5-Coder-14B-Instruct-AWQ"
 DEFAULT_MAX_MODEL_LEN = 32768
-OUTPUT_RESERVE_TOKENS = 4096
+def _output_reserve(max_model_len: int) -> int:
+    """Adaptive output reserve: up to 25% of context, clamped [256, 4096]."""
+    return min(4096, max(256, max_model_len // 4))
 
 # Module-level sentinels for the fatal error handler. main() writes these
 # before heavy work so the outer except can emit a structured status line.
@@ -37,14 +39,14 @@ _model = DEFAULT_MODEL
 _start = None
 
 
-def truncate_to_fit(tokenizer, system_prompt, user_input, max_model_len):
+def truncate_to_fit(tokenizer, system_prompt, user_input, max_model_len, output_reserve):
     """Truncate user_input so system_prompt + user_input + output reserve fits.
 
     Uses the model's tokenizer for accurate token counting. Returns the
     (possibly truncated) user_input and whether truncation occurred.
     """
     system_tokens = len(tokenizer.encode(system_prompt))
-    available = max_model_len - system_tokens - OUTPUT_RESERVE_TOKENS
+    available = max_model_len - system_tokens - output_reserve
     if available <= 0:
         return "", True
 
@@ -92,12 +94,14 @@ def main() -> int:
         print(f"[{TAG}] LOCAL_MAX_MODEL_LEN must be positive, got: {max_model_len}", file=sys.stderr)
         return 0
 
+    output_reserve = _output_reserve(max_model_len)
+
     # Context limit guard: tokenizer-based, accounts for system prompt.
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=True)
 
     user_input, was_truncated = truncate_to_fit(
-        tokenizer, system_prompt, user_input, max_model_len,
+        tokenizer, system_prompt, user_input, max_model_len, output_reserve,
     )
     if was_truncated:
         user_tokens = len(tokenizer.encode(user_input))
@@ -105,7 +109,7 @@ def main() -> int:
         print(
             f"[{TAG}] Input truncated to fit context window"
             f" (system: {system_tokens}, user: {user_tokens},"
-            f" reserve: {OUTPUT_RESERVE_TOKENS}, max: {max_model_len})",
+            f" reserve: {output_reserve}, max: {max_model_len})",
             file=sys.stderr,
         )
     if not user_input:
@@ -173,7 +177,7 @@ def main() -> int:
         top_p=0.8,
         top_k=20,
         repetition_penalty=1.05,
-        max_tokens=4096,
+        max_tokens=output_reserve,
     )
     messages = [
         {"role": "system", "content": system_prompt},

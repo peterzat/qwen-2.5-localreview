@@ -373,6 +373,39 @@ fi
 
 # ============================================================
 echo ""
+echo "==> Test 11: adaptive reserve gives more capacity at 8K context"
+# ============================================================
+
+# At LOCAL_MAX_MODEL_LEN=8192, the adaptive reserve is 2048 (25% of 8192),
+# leaving ~6138 tokens for input. Under the old fixed 4096 reserve, only
+# ~4090 tokens would be available. Feed ~5000 tokens of input (via --dry-run)
+# and verify it is NOT truncated.
+if ${HAS_MODEL}; then
+  echo "You are a reviewer." > "${TEST_DIR}/system11.txt"
+  # Generate ~4500 tokens of input. This exceeds the old fixed reserve's
+  # capacity (8192-5-4096=4091) but fits the adaptive reserve's capacity
+  # (8192-5-2048=6139), proving the adaptive reserve works.
+  "${PYTHON}" -c "print('def func(): pass  # placeholder line\n' * 500)" > "${TEST_DIR}/medium.txt"
+
+  STDERR_FILE="${TEST_DIR}/stderr11.txt"
+  LOCAL_MAX_MODEL_LEN=8192 "${PYTHON}" "${SCRIPT}" \
+    --system "${TEST_DIR}/system11.txt" \
+    --input "${TEST_DIR}/medium.txt" \
+    --dry-run \
+    2>"${STDERR_FILE}" || true
+
+  if grep -q "truncated" "${STDERR_FILE}"; then
+    fail "adaptive reserve: input truncated at 8K context (reserve too large)"
+    echo "    stderr: $(cat "${STDERR_FILE}")"
+  else
+    pass "adaptive reserve: medium input fits at 8K context"
+  fi
+else
+  echo "  SKIP (model not in HF cache, tokenizer unavailable)"
+fi
+
+# ============================================================
+echo ""
 echo "==> Results: ${TOTAL} checks, ${FAILS} failures"
 # ============================================================
 
