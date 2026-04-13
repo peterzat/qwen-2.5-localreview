@@ -84,7 +84,7 @@ for outfile in "${OPENAI_OUT}" "${GOOGLE_OUT}" "${LOCAL_OUT}"; do
 
 ## Config
 
-Add to `~/.config/claude-reviewers/.env` (done automatically by `setup.sh`):
+Add to `~/.config/claude-reviewers/.env` (managed by zat.env's install process, not by this project):
 
 ```bash
 # --- Local (vLLM offline, qwen) ---

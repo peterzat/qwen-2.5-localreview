@@ -206,6 +206,16 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
+    except SystemExit as e:
+        # argparse calls sys.exit(2) on bad args; normalize to fail-open.
+        # Exit code 0 from main() passes through unchanged.
+        if e.code == 0:
+            sys.exit(0)
+        print(
+            f"[{TAG}] {_model} -- error: bad arguments -- 0 in / 0 out -- 0s",
+            file=sys.stderr,
+        )
+        sys.exit(0)  # fail-open
     except Exception as e:
         elapsed = time.monotonic() - _start if _start is not None else 0
         # Detect CUDA OOM for an actionable message.

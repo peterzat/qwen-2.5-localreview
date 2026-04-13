@@ -37,15 +37,20 @@ trap cleanup EXIT
 echo "==> Test 1: missing args"
 # ============================================================
 
-STDOUT=$("${PYTHON}" "${SCRIPT}" 2>/dev/null || true)
-EXIT_CODE=$?
-# argparse exits 2 on missing required args; the outer try/except catches it
-# and exits 0 (fail-open), or argparse exits before our handler.
-# Either way, no findings on stdout.
+STDERR_FILE="${TEST_DIR}/stderr1.txt"
+STDOUT=$("${PYTHON}" "${SCRIPT}" 2>"${STDERR_FILE}" || true)
+
 if [[ -z "${STDOUT}" ]]; then
   pass "missing args: no stdout"
 else
   fail "missing args: unexpected stdout: ${STDOUT}"
+fi
+
+if grep -q '\[qwen\]' "${STDERR_FILE}"; then
+  pass "missing args: tagged status on stderr"
+else
+  fail "missing args: missing [qwen] tag on stderr"
+  echo "    stderr: $(cat "${STDERR_FILE}")"
 fi
 
 # ============================================================
