@@ -278,6 +278,27 @@ def main() -> int:
 
     # Findings to stdout.
     print(output_text)
+
+    # Auto-start the warm server for the next review. Detached process
+    # with its own session; survives after review.py exits. The flock
+    # prevents duplicates: if a warm server is already running, the new
+    # one exits immediately. Failures are silent (no impact on the
+    # review that just completed).
+    try:
+        import subprocess
+        warm_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "warm.py")
+        if os.path.exists(warm_script):
+            devnull = open(os.devnull, "w")
+            subprocess.Popen(
+                [sys.executable, warm_script],
+                start_new_session=True,
+                stdin=subprocess.DEVNULL,
+                stdout=devnull,
+                stderr=devnull,
+            )
+    except Exception:
+        pass
+
     return 0
 
 

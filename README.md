@@ -157,15 +157,20 @@ The four fixtures, the baseline output, and the FP8 KV output are all committed 
 
 ## Keep-warm mode
 
-The cold path loads the model on every invocation (~30-60s). For batch reviews or iterative development, `warm.py` keeps the model loaded in VRAM and serves requests via a Unix domain socket.
+After a successful cold-path review, `review.py` automatically launches `warm.py` as a detached background process. The warm server loads the model and waits for the next review. This means:
+
+1. First `/codereview` in a session: cold path (~30-60s). Warm server starts in background.
+2. Second `/codereview` (minutes later): warm path (~1-7s). Model already loaded.
+3. After 15 minutes of no reviews: warm server exits, VRAM freed.
+
+No manual steps required. The warm server is self-managing.
 
 ```bash
-# Start the warm server (foreground, Ctrl-C to stop):
+# The warm server can also be started manually if desired:
 .venv/bin/python warm.py
 
-# Reviews now use the warm path automatically (~1-7s instead of 30-60s):
-.venv/bin/python review.py --system /tmp/sys.txt --input /tmp/diff.txt
-# stderr shows: [qwen] ... -- 537 in / 26 out -- 1s (warm)
+# Check if a warm server is running:
+ls -la $XDG_RUNTIME_DIR/qwen-localreview.sock
 ```
 
 The warm server:
@@ -174,7 +179,7 @@ The warm server:
 - Monitors VRAM every 30 seconds; exits if another process starts using the GPU (>256 MiB external allocation detected)
 - Cleans up the socket and releases the flock on shutdown (SIGTERM, SIGINT, idle, or VRAM yield)
 
-If no warm server is running, `review.py` falls back to the cold path automatically. If the warm server crashes mid-request, `review.py` falls through to the cold path transparently (fail-open preserved).
+If no warm server is running, `review.py` uses the cold path automatically. If the warm server crashes mid-request, `review.py` falls through to the cold path transparently (fail-open preserved). The GPU flock prevents duplicate warm servers: the auto-launch silently exits if one is already running.
 
 The Unix domain socket (`$XDG_RUNTIME_DIR/qwen-localreview.sock`) is local-only and user-owned. No network exposure, no authentication needed (same trust boundary as the filesystem).
 
