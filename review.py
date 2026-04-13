@@ -82,7 +82,15 @@ def main() -> int:
     global _model, _start
     model = os.environ.get("LOCAL_MODEL", DEFAULT_MODEL)
     _model = model
-    max_model_len = int(os.environ.get("LOCAL_MAX_MODEL_LEN", str(DEFAULT_MAX_MODEL_LEN)))
+    raw_max_len = os.environ.get("LOCAL_MAX_MODEL_LEN", str(DEFAULT_MAX_MODEL_LEN))
+    try:
+        max_model_len = int(raw_max_len)
+    except ValueError:
+        print(f"[{TAG}] LOCAL_MAX_MODEL_LEN must be an integer, got: {raw_max_len!r}", file=sys.stderr)
+        return 0
+    if max_model_len <= 0:
+        print(f"[{TAG}] LOCAL_MAX_MODEL_LEN must be positive, got: {max_model_len}", file=sys.stderr)
+        return 0
 
     # Context limit guard: tokenizer-based, accounts for system prompt.
     from transformers import AutoTokenizer

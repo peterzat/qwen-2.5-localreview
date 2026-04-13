@@ -329,6 +329,45 @@ fi
 
 # ============================================================
 echo ""
+echo "==> Test 9: malformed LOCAL_MAX_MODEL_LEN"
+# ============================================================
+
+echo "You are a reviewer." > "${TEST_DIR}/system9.txt"
+echo "Review this." > "${TEST_DIR}/input9.txt"
+
+STDERR_FILE="${TEST_DIR}/stderr9.txt"
+LOCAL_MAX_MODEL_LEN=notanumber "${PYTHON}" "${SCRIPT}" \
+  --system "${TEST_DIR}/system9.txt" \
+  --input "${TEST_DIR}/input9.txt" \
+  2>"${STDERR_FILE}" || true
+
+if grep -q 'must be an integer' "${STDERR_FILE}"; then
+  pass "malformed max_model_len: diagnostic on stderr"
+else
+  fail "malformed max_model_len: missing diagnostic"
+  echo "    stderr: $(cat "${STDERR_FILE}")"
+fi
+
+# ============================================================
+echo ""
+echo "==> Test 10: zero LOCAL_MAX_MODEL_LEN"
+# ============================================================
+
+STDERR_FILE="${TEST_DIR}/stderr10.txt"
+LOCAL_MAX_MODEL_LEN=0 "${PYTHON}" "${SCRIPT}" \
+  --system "${TEST_DIR}/system9.txt" \
+  --input "${TEST_DIR}/input9.txt" \
+  2>"${STDERR_FILE}" || true
+
+if grep -q 'must be positive' "${STDERR_FILE}"; then
+  pass "zero max_model_len: diagnostic on stderr"
+else
+  fail "zero max_model_len: missing diagnostic"
+  echo "    stderr: $(cat "${STDERR_FILE}")"
+fi
+
+# ============================================================
+echo ""
 echo "==> Results: ${TOTAL} checks, ${FAILS} failures"
 # ============================================================
 
