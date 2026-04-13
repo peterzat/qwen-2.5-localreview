@@ -1,6 +1,6 @@
 # qwen-2.5-localreview
 
-Local adversarial code reviewer for use with zat.env's `/codereview` skill. Runs Qwen2.5-Coder-14B-Instruct-AWQ via vLLM offline inference on a local GPU. No server, no network calls, no API costs.
+Local adversarial code reviewer for use with [zat.env](https://github.com/peterzat/zat.env)'s `/codereview` skill. Runs Qwen2.5-Coder-14B-Instruct-AWQ via vLLM offline inference on a local GPU. No server, no network calls, no API costs.
 
 ## Prerequisites
 
