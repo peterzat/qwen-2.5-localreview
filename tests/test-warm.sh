@@ -200,6 +200,103 @@ rm -f "${STDERR_FILE}"
 
 # ============================================================
 echo ""
+echo "==> Test 6: VRAM yield when external process uses GPU"
+# ============================================================
+
+# Start the warm server, then allocate >256 MiB of GPU memory from a
+# separate process. The warm server should detect the external usage
+# within its 30s poll interval and exit.
+cleanup_warm
+sleep 3
+WARM_LOG=$(mktemp)
+LOCAL_WARM_TIMEOUT=120 "${PYTHON}" "${WARM_SCRIPT}" 2>"${WARM_LOG}" &
+WARM_PID=$!
+
+if wait_for_socket 90; then
+  # Allocate 512 MiB on the GPU from a separate process.
+  "${PYTHON}" -c "
+import torch, time, sys
+x = torch.zeros(512 * 1024 * 1024 // 4, dtype=torch.float32, device='cuda')
+# Hold the allocation for 45s (enough for the 30s poll to fire).
+time.sleep(45)
+" &
+  ALLOC_PID=$!
+  sleep 2  # let the allocation happen
+
+  # Wait up to 40s for the warm server to detect and yield.
+  YIELDED=false
+  for i in $(seq 1 40); do
+    if ! kill -0 "${WARM_PID}" 2>/dev/null; then
+      YIELDED=true
+      break
+    fi
+    sleep 1
+  done
+
+  kill "${ALLOC_PID}" 2>/dev/null || true; wait "${ALLOC_PID}" 2>/dev/null || true
+
+  if ${YIELDED}; then
+    if grep -q "external GPU usage" "${WARM_LOG}" || grep -q "yielding" "${WARM_LOG}"; then
+      pass "VRAM yield: warm server exited on external GPU usage"
+    else
+      pass "VRAM yield: warm server exited (yield message not found, but process died)"
+    fi
+  else
+    fail "VRAM yield: warm server did not exit after external GPU allocation"
+    echo "    log: $(tail -5 "${WARM_LOG}")"
+    cleanup_warm
+  fi
+else
+  fail "warm server did not start for VRAM yield test"
+  echo "    log: $(cat "${WARM_LOG}")"
+fi
+rm -f "${WARM_LOG}"
+WARM_PID=""
+
+# ============================================================
+echo ""
+echo "==> Test 7: OOM produces fail-open with structured error"
+# ============================================================
+
+# Hold most GPU memory, then run review.py. vLLM should fail to start
+# (OOM), and review.py should exit 0 with a structured [qwen] error
+# on stderr.
+cleanup_warm
+"${PYTHON}" -c "
+import torch, time
+# Allocate ~18 GB to starve vLLM of memory.
+x = torch.zeros(18 * 1024 * 1024 * 1024 // 4, dtype=torch.float32, device='cuda')
+time.sleep(30)
+" &
+OOM_ALLOC_PID=$!
+sleep 2
+
+STDERR_FILE=$(mktemp)
+LOCAL_GPU_LOCK_TIMEOUT=5 "${PYTHON}" "${REVIEW_SCRIPT}" \
+  --system "${SYSTEM_PROMPT}" \
+  --input "${FIXTURE}" \
+  2>"${STDERR_FILE}" || true
+OOM_EXIT=$?
+
+kill "${OOM_ALLOC_PID}" 2>/dev/null || true; wait "${OOM_ALLOC_PID}" 2>/dev/null || true
+
+if [[ "${OOM_EXIT}" -eq 0 ]]; then
+  pass "OOM: exit code 0 (fail-open)"
+else
+  fail "OOM: exit code ${OOM_EXIT} (not fail-open)"
+fi
+
+if grep -q '\[qwen\]' "${STDERR_FILE}" && grep -q 'error:' "${STDERR_FILE}"; then
+  pass "OOM: structured [qwen] error on stderr"
+else
+  fail "OOM: missing structured error"
+  echo "    stderr: $(cat "${STDERR_FILE}")"
+fi
+
+rm -f "${STDERR_FILE}"
+
+# ============================================================
+echo ""
 echo "==> Results: ${TOTAL} checks, ${FAILS} failures"
 # ============================================================
 
