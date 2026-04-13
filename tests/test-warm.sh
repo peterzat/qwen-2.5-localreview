@@ -47,6 +47,17 @@ cleanup_warm() {
 }
 trap cleanup_warm EXIT
 
+# Kill any existing warm server (e.g., auto-launched by a prior test run
+# or test-quality.sh triggering auto-warm via review.py's cold path).
+# We need exclusive control of the warm lifecycle for these tests.
+EXISTING_PID=$(pgrep -f "python.*warm\\.py" 2>/dev/null || true)
+if [[ -n "${EXISTING_PID}" ]]; then
+  echo "Killing existing warm server (PID ${EXISTING_PID})..."
+  kill ${EXISTING_PID} 2>/dev/null || true
+  sleep 3
+fi
+rm -f "${SOCK_PATH}" 2>/dev/null || true
+
 # Helper: wait for warm server socket to appear.
 wait_for_socket() {
   local timeout="${1:-60}"
@@ -272,11 +283,11 @@ OOM_ALLOC_PID=$!
 sleep 2
 
 STDERR_FILE=$(mktemp)
+OOM_EXIT=0
 LOCAL_GPU_LOCK_TIMEOUT=5 "${PYTHON}" "${REVIEW_SCRIPT}" \
   --system "${SYSTEM_PROMPT}" \
   --input "${FIXTURE}" \
-  2>"${STDERR_FILE}" || true
-OOM_EXIT=$?
+  2>"${STDERR_FILE}" || OOM_EXIT=$?
 
 kill "${OOM_ALLOC_PID}" 2>/dev/null || true; wait "${OOM_ALLOC_PID}" 2>/dev/null || true
 
@@ -299,6 +310,13 @@ rm -f "${STDERR_FILE}"
 echo ""
 echo "==> Results: ${TOTAL} checks, ${FAILS} failures"
 # ============================================================
+
+# Final cleanup: kill any warm server left by auto-launch during tests.
+cleanup_warm
+LEFTOVER=$(pgrep -f "python.*warm\\.py" 2>/dev/null || true)
+if [[ -n "${LEFTOVER}" ]]; then
+  kill ${LEFTOVER} 2>/dev/null || true
+fi
 
 if [[ "${FAILS}" -gt 0 ]]; then
   exit 1
