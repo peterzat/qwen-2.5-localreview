@@ -114,13 +114,17 @@ def main() -> int:
     _start = start
 
     # VRAM preflight: warn early if GPU memory looks too low.
+    # Threshold tuned for the FP8 KV default (14B AWQ + fp8_e4m3 KV cache
+    # at 32K context with gpu_memory_utilization=0.90): vLLM refuses to
+    # start when free VRAM is below ~17.6 GB on the 20 GB Ada card, so
+    # warn at <14 GB to flag likely-OOM before loading.
     try:
         import torch
         if torch.cuda.is_available():
             free_gb = torch.cuda.mem_get_info()[0] / (1024 ** 3)
-            if free_gb < 10.0:
+            if free_gb < 14.0:
                 print(
-                    f"[{TAG}] Warning: {free_gb:.1f}GB VRAM free, need ~10GB."
+                    f"[{TAG}] Warning: {free_gb:.1f}GB VRAM free, need ~14GB."
                     f" May OOM. Try: LOCAL_MAX_MODEL_LEN=8192",
                     file=sys.stderr,
                 )
