@@ -26,5 +26,6 @@ This includes `~/.config/claude-reviewers/.env`, which is created and managed by
 - Python venv at `.venv/`. Never pip install outside the venv.
 - Model downloaded to shared HuggingFace cache (`~/.cache/huggingface`) per ml-gpu.md convention. Never override `HF_HOME`.
 - vLLM pinned to a specific version in `setup.sh`. Update manually when needed.
-- All inference is pure offline (vLLM `LLM` class). No server, no TCP/IP, no ports.
+- All inference is pure offline (vLLM `LLM` class). No network server, no TCP/IP, no ports. Optional local Unix domain socket for keep-warm mode (`warm.py`).
+- GPU mutex via flock (`$XDG_RUNTIME_DIR/qwen-localreview.lock`). Concurrent invocations serialize automatically.
 - Fail-open: review.py exits 0 on all errors, warnings to stderr.

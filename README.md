@@ -32,7 +32,7 @@ review-external.sh (zat.env)
                    VRAM freed on exit
 ```
 
-Each invocation loads the model (~30-60s), runs inference (~60-120s), then exits and frees all GPU resources. No persistent processes, no reserved VRAM between reviews. The OS page cache keeps model files in RAM (64GB DDR4) so repeat invocations skip most disk I/O.
+Each invocation loads the model (~30-60s), runs inference (~60-120s), then exits and frees all GPU resources. The OS page cache keeps model files in RAM (64GB DDR4) so repeat invocations skip most disk I/O. Concurrent invocations serialize via a flock-based GPU mutex (`$XDG_RUNTIME_DIR/qwen-localreview.lock`). See also the optional keep-warm mode below for avoiding the model load cost on serial reviews.
 
 ## Consumer Integration Guide
 
@@ -155,11 +155,36 @@ The biggest practical risk is **#1 (VRAM headroom)** if you ever change anything
 
 The four fixtures, the baseline output, and the FP8 KV output are all committed under `tests/results/` so any future change can be diffed against the historical record.
 
+## Keep-warm mode
+
+The cold path loads the model on every invocation (~30-60s). For batch reviews or iterative development, `warm.py` keeps the model loaded in VRAM and serves requests via a Unix domain socket.
+
+```bash
+# Start the warm server (foreground, Ctrl-C to stop):
+.venv/bin/python warm.py
+
+# Reviews now use the warm path automatically (~1-7s instead of 30-60s):
+.venv/bin/python review.py --system /tmp/sys.txt --input /tmp/diff.txt
+# stderr shows: [qwen] ... -- 537 in / 26 out -- 1s (warm)
+```
+
+The warm server:
+- Holds the GPU flock for its lifetime (serializes with cold-path reviews)
+- Exits after 15 minutes of idle (configurable via `LOCAL_WARM_TIMEOUT`)
+- Monitors VRAM every 30 seconds; exits if another process starts using the GPU (>256 MiB external allocation detected)
+- Cleans up the socket and releases the flock on shutdown (SIGTERM, SIGINT, idle, or VRAM yield)
+
+If no warm server is running, `review.py` falls back to the cold path automatically. If the warm server crashes mid-request, `review.py` falls through to the cold path transparently (fail-open preserved).
+
+The Unix domain socket (`$XDG_RUNTIME_DIR/qwen-localreview.sock`) is local-only and user-owned. No network exposure, no authentication needed (same trust boundary as the filesystem).
+
 ## Environment Variables
 
 | Variable | Default | Description |
 |---|---|---|
 | `LOCAL_MODEL` | `Qwen/Qwen2.5-Coder-14B-Instruct-AWQ` | HuggingFace model ID |
 | `LOCAL_MAX_MODEL_LEN` | `32768` | Max context length in tokens |
+| `LOCAL_GPU_LOCK_TIMEOUT` | `270` | Seconds to wait for GPU flock before fail-open |
+| `LOCAL_WARM_TIMEOUT` | `900` | Warm server idle timeout in seconds |
 | `LOCAL_REVIEW_SCRIPT` | (none) | Absolute path to `review.py` |
 | `LOCAL_REVIEW_VENV` | (none) | Absolute path to project `.venv` |
