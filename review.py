@@ -60,6 +60,51 @@ def truncate_to_fit(tokenizer, system_prompt, user_input, max_model_len, output_
     return truncated_text, True
 
 
+def _try_warm_path(system_prompt: str, user_input: str):
+    """Attempt inference via the warm server. Returns None on any failure."""
+    import json
+    import socket as sock_mod
+    from gpu_lock import socket_path
+
+    sock_path = socket_path()
+    if not os.path.exists(sock_path):
+        return None
+
+    try:
+        conn = sock_mod.socket(sock_mod.AF_UNIX, sock_mod.SOCK_STREAM)
+        conn.settimeout(0.5)  # 500ms connect timeout
+        conn.connect(sock_path)
+
+        request = json.dumps({
+            "system_prompt": system_prompt,
+            "user_input": user_input,
+        }).encode() + b"\n"
+        conn.settimeout(120.0)  # 120s for inference
+        conn.sendall(request)
+
+        data = b""
+        while b"\n" not in data:
+            chunk = conn.recv(65536)
+            if not chunk:
+                return None
+            data += chunk
+        conn.close()
+
+        response = json.loads(data.split(b"\n", 1)[0])
+        if response.get("status") != "ok":
+            return None
+
+        return (
+            response.get("output", ""),
+            response.get("prompt_tokens", 0),
+            response.get("completion_tokens", 0),
+            response.get("elapsed", 0.0),
+            response.get("stderr_lines", []),
+        )
+    except Exception:
+        return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Local code review via vLLM")
     parser.add_argument("--system", required=True, help="Path to system prompt file")
@@ -96,6 +141,24 @@ def main() -> int:
 
     output_reserve = _output_reserve(max_model_len)
 
+    _warm_attempted = False
+    # Warm path: try the warm server before loading the tokenizer or model.
+    # The server handles tokenization, truncation, and inference internally.
+    warm_result = _try_warm_path(system_prompt, user_input)
+    if warm_result is not None:
+        output_text, prompt_tokens, completion_tokens, elapsed, stderr_lines = warm_result
+        for line in stderr_lines:
+            print(line, file=sys.stderr)
+        print(
+            f"[{TAG}] {model} -- {prompt_tokens} in / {completion_tokens} out"
+            f" -- {elapsed:.0f}s (warm)",
+            file=sys.stderr,
+        )
+        if output_text:
+            print(output_text)
+        return 0
+    _warm_attempted = True
+
     # Context limit guard: tokenizer-based, accounts for system prompt.
     from transformers import AutoTokenizer
     tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=True)
@@ -122,8 +185,11 @@ def main() -> int:
         return 0
 
     # GPU mutex: serialize concurrent invocations via flock.
+    # Use a short timeout if the warm path was attempted (the warm server
+    # is likely holding the flock and stuck), preserving timeout budget.
     from gpu_lock import acquire_gpu_lock
-    lock_timeout = float(os.environ.get("LOCAL_GPU_LOCK_TIMEOUT", "270"))
+    default_lock_timeout = "30" if _warm_attempted else "270"
+    lock_timeout = float(os.environ.get("LOCAL_GPU_LOCK_TIMEOUT", default_lock_timeout))
     lock_file = acquire_gpu_lock(timeout=lock_timeout)
     if lock_file is None:
         print(f"[{TAG}] GPU busy (another review running), skipping", file=sys.stderr)
