@@ -483,6 +483,72 @@ fi
 
 # ============================================================
 echo ""
+echo "==> Test 14: warm path with mock server"
+# ============================================================
+
+# Start a tiny Python mock that listens on the warm socket and returns
+# a canned JSON response. Verify review.py uses the warm path.
+SOCK_PATH=$("${PYTHON}" -c "from gpu_lock import socket_path; print(socket_path())" 2>/dev/null)
+
+if [[ -n "${SOCK_PATH}" ]]; then
+  # Start mock warm server.
+  "${PYTHON}" -c "
+import json, os, socket, sys
+sock_path = sys.argv[1]
+if os.path.exists(sock_path):
+    os.unlink(sock_path)
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.bind(sock_path)
+s.listen(1)
+conn, _ = s.accept()
+data = b''
+while b'\n' not in data:
+    data += conn.recv(65536)
+response = json.dumps({
+    'status': 'ok',
+    'output': '[BLOCK] test.py:1 -- mock finding',
+    'prompt_tokens': 100,
+    'completion_tokens': 10,
+    'elapsed': 0.5,
+    'stderr_lines': [],
+})
+conn.sendall(response.encode() + b'\n')
+conn.close()
+s.close()
+os.unlink(sock_path)
+" "${SOCK_PATH}" &
+  MOCK_PID=$!
+  sleep 0.5
+
+  echo "You are a reviewer." > "${TEST_DIR}/system14.txt"
+  echo "Review this." > "${TEST_DIR}/input14.txt"
+  STDERR_FILE="${TEST_DIR}/stderr14.txt"
+  STDOUT=$("${PYTHON}" "${SCRIPT}" \
+    --system "${TEST_DIR}/system14.txt" \
+    --input "${TEST_DIR}/input14.txt" \
+    2>"${STDERR_FILE}") || true
+
+  kill "${MOCK_PID}" 2>/dev/null || true; wait "${MOCK_PID}" 2>/dev/null || true
+
+  if echo "${STDOUT}" | grep -q "mock finding"; then
+    pass "warm path: mock server response received"
+  else
+    fail "warm path: did not receive mock response"
+    echo "    stdout: ${STDOUT}"
+  fi
+
+  if grep -q "(warm)" "${STDERR_FILE}"; then
+    pass "warm path: (warm) annotation on stderr"
+  else
+    fail "warm path: missing (warm) annotation"
+    echo "    stderr: $(cat "${STDERR_FILE}")"
+  fi
+else
+  echo "  SKIP (socket path unavailable)"
+fi
+
+# ============================================================
+echo ""
 echo "==> Results: ${TOTAL} checks, ${FAILS} failures"
 # ============================================================
 
