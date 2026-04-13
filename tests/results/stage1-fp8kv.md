@@ -49,3 +49,70 @@ _498 prompt / 4 gen tokens, 0.5s wall, used 18.12 GB_
 ```
 No issues found.
 ```
+
+## 05-py-correct-simple
+
+_598 prompt / 4 gen tokens, 0.6s wall, used 18.12 GB_
+
+```
+No issues found.
+```
+
+## 06-py-correct-subtle
+
+_690 prompt / 4 gen tokens, 0.6s wall, used 18.12 GB_
+
+```
+No issues found.
+```
+
+## 07-py-buggy-simple
+
+_537 prompt / 25 gen tokens, 1.3s wall, used 18.12 GB_
+
+```
+[BLOCK] db/queries.py:10 -- SQL injection vulnerability due to direct interpolation of user input into SQL query.
+```
+
+## 08-py-buggy-subtle
+
+_733 prompt / 40 gen tokens, 1.9s wall, used 18.12 GB_
+
+```
+[BLOCK] client/retry.py:32 -- The broad except clause catches KeyboardInterrupt and SystemExit, making it impossible to interrupt the retry loop with Ctrl-C or sys.exit() on persistent failures.
+```
+
+## 09-cpp-correct-simple
+
+_660 prompt / 4 gen tokens, 0.6s wall, used 18.12 GB_
+
+```
+No issues found.
+```
+
+## 10-cpp-correct-subtle
+
+_873 prompt / 4 gen tokens, 0.7s wall, used 18.12 GB_
+
+```
+No issues found.
+```
+
+## 11-cpp-buggy-simple
+
+_586 prompt / 68 gen tokens, 2.8s wall, used 18.12 GB_
+
+```
+[BLOCK] src/logger.cpp:10 -- strcpy is used to copy a string into a fixed-size buffer without checking the length, leading to a potential buffer overflow.
+[BLOCK] src/logger.cpp:20 -- sprintf is used to format a string into a fixed-size buffer without checking the length, leading to a potential buffer overflow.
+```
+
+## 12-cpp-buggy-subtle
+
+_785 prompt / 91 gen tokens, 3.8s wall, used 18.12 GB_
+
+```
+[BLOCK] src/dispatcher.cpp:42 -- After moving msg.payload in dispatch(), the log line on line 42 reads msg.payload after it was moved, which leads to undefined behavior.
+
+[BLOCK] src/dispatcher.cpp:27 -- The use of .at() on handlers_ in dispatch() can lead to undefined behavior if register_handler() triggers a rehash of the unordered_map during the range-based for loop over pending_.
+```
