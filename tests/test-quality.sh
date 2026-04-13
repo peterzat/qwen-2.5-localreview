@@ -21,6 +21,8 @@ PYTHON="${VENV}/bin/python"
 FIXTURES_DIR="${REPO_DIR}/tests/fixtures/diffs"
 SYSTEM_PROMPT="${REPO_DIR}/tests/fixtures/system.txt"
 
+FIXTURE_TIMEOUT=120  # seconds per fixture; prevents one hang from blocking the suite
+
 if [[ "${1:-}" != "--full" ]]; then
   echo "test-quality.sh is a slow GPU test (~2-3 min)."
   echo "Usage: tests/test-quality.sh --full"
@@ -82,12 +84,22 @@ for FIXTURE_FILE in "${FIXTURES_DIR}"/0[5-9]-*.patch "${FIXTURES_DIR}"/1[0-2]-*.
     continue
   fi
 
-  # Run review.py on this fixture.
+  # Run review.py on this fixture with a timeout guard.
   STDERR_FILE="${TEST_DIR}/${FNAME}-stderr.txt"
-  STDOUT=$("${PYTHON}" "${SCRIPT}" \
+  FIXTURE_EXIT=0
+  STDOUT=$(timeout "${FIXTURE_TIMEOUT}" "${PYTHON}" "${SCRIPT}" \
     --system "${SYSTEM_PROMPT}" \
     --input "${FIXTURE_FILE}" \
-    2>"${STDERR_FILE}") || true
+    2>"${STDERR_FILE}") || FIXTURE_EXIT=$?
+
+  # Detect timeout (exit 124) and review.py crashes (error: in stderr).
+  IS_TIMEOUT=false
+  IS_CRASH=false
+  if [[ "${FIXTURE_EXIT}" -eq 124 ]]; then
+    IS_TIMEOUT=true
+  elif grep -q 'error:' "${STDERR_FILE}" 2>/dev/null; then
+    IS_CRASH=true
+  fi
 
   # Check for BLOCK or WARN findings in output.
   HAS_BLOCK_WARN=false
@@ -96,7 +108,12 @@ for FIXTURE_FILE in "${FIXTURES_DIR}"/0[5-9]-*.patch "${FIXTURES_DIR}"/1[0-2]-*.
   fi
 
   if [[ "${EXPECTED}" == "buggy" ]]; then
-    if ${HAS_BLOCK_WARN}; then
+    if ${IS_TIMEOUT}; then
+      fail "${FNAME}: timed out after ${FIXTURE_TIMEOUT}s"
+    elif ${IS_CRASH}; then
+      fail "${FNAME}: review.py crashed"
+      echo "    stderr: $(cat "${STDERR_FILE}")"
+    elif ${HAS_BLOCK_WARN}; then
       pass "${FNAME}: buggy fixture triggered BLOCK/WARN"
     else
       # Model missed the bug -- capability limitation, not infrastructure failure.
@@ -104,7 +121,12 @@ for FIXTURE_FILE in "${FIXTURES_DIR}"/0[5-9]-*.patch "${FIXTURES_DIR}"/1[0-2]-*.
       echo "    output: ${STDOUT:-<empty>}"
     fi
   elif [[ "${EXPECTED}" == "correct" ]]; then
-    if ${HAS_BLOCK_WARN}; then
+    if ${IS_TIMEOUT}; then
+      fail "${FNAME}: timed out after ${FIXTURE_TIMEOUT}s"
+    elif ${IS_CRASH}; then
+      fail "${FNAME}: review.py crashed"
+      echo "    stderr: $(cat "${STDERR_FILE}")"
+    elif ${HAS_BLOCK_WARN}; then
       fail "${FNAME}: correct fixture triggered false BLOCK/WARN"
       echo "    output: ${STDOUT}"
     else
