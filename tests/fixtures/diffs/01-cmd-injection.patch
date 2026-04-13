@@ -1,3 +1,8 @@
+# Bench/eval fixture -- INTENTIONAL TEST DATA
+# Category: Python / buggy (security)
+# Expected: BLOCK for command injection via os.system with unsanitized input.
+# The diff adds a build runner that passes user-supplied argv directly
+# to os.system() via f-string, enabling arbitrary command execution.
 === DIFF ===
 diff --git a/tools/runner.py b/tools/runner.py
 new file mode 100644

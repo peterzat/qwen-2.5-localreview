@@ -1,3 +1,9 @@
+# Bench/eval fixture -- INTENTIONAL TEST DATA
+# Category: Python / buggy (correctness)
+# Expected: BLOCK or WARN for off-by-one in pagination logic.
+# The diff changes the 0-indexed offset from (page-1)*page_size to
+# page*page_size (skips first page) and adds +1 to the end index
+# (returns one extra element per page).
 === DIFF ===
 diff --git a/src/pagination.py b/src/pagination.py
 index 1111111..2222222 100644

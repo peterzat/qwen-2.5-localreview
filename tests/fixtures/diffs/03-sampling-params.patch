@@ -1,3 +1,9 @@
+# Bench/eval fixture -- INTENTIONAL TEST DATA
+# Category: Python / correct (config change)
+# Expected: No issues found, or NOTE-level only. Zero BLOCK/WARN.
+# The diff adds Qwen-recommended sampling parameters (top_p, top_k,
+# repetition_penalty) to the existing SamplingParams construction.
+# This is a benign configuration improvement with no bugs.
 === DIFF ===
 diff --git a/review.py b/review.py
 index c5be590..1c47740 100644

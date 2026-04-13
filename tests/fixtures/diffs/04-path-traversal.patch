@@ -1,3 +1,10 @@
+# Bench/eval fixture -- INTENTIONAL TEST DATA
+# Category: Python / buggy (security)
+# Expected: BLOCK for path traversal via removal of "/" and ".." guards.
+# The diff removes the "/" and ".." validation from a Flask file download
+# endpoint, enabling directory traversal. Also adds an upload endpoint
+# that writes user-controlled filenames without sanitization.
+# NOTE: The 14B model consistently misses this bug (known capability gap).
 === DIFF ===
 diff --git a/web/files.py b/web/files.py
 index 3333333..4444444 100644
