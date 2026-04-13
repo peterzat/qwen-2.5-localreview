@@ -1,152 +1,117 @@
-## Spec -- 2026-04-10 -- Ada-aware inference experiments (abstract-yawning-raven)
+## Spec -- 2026-04-13 -- Cleanup, VRAM preflight, quality validation fixtures
 
-**Goal:** Measure whether Ada-native inference formats (FP8 KV cache, FP8 weights),
-a larger model (32B-AWQ), and a newer vLLM buy better adversarial review output on
-the RTX 4000 SFF Ada, then either adopt a new default configuration (with the
-current config preserved as a legacy toggle) or prove the current configuration
-is already optimal and record that finding in CLAUDE.md.
+**Goal:** Fix stale code from the toggle add-then-remove sequence, retune the VRAM
+preflight threshold from measured data, and add a quality validation fixture corpus
+that tests whether the 14B model reliably catches bugs and avoids false positives
+across two languages and two difficulty levels.
 
 ### Acceptance Criteria
 
-- [x] A benchmark harness at `tests/bench.py` loads the configured model, runs a
-      fixed corpus of 3-5 representative diffs checked in under `tests/fixtures/diffs/`,
-      and reports per-diff prefill tokens/s, decode tokens/s, peak VRAM (via
-      `torch.cuda.max_memory_allocated`), and wall time. Takes `--config <name>`
-      so all stages reuse it.
-- [x] An eval harness at `tests/eval.py` runs the same fixed corpus and writes raw
-      model outputs to `tests/results/<config-name>.md` (one file per measured
-      config) so configs can be compared side-by-side by reading committed files.
-- [x] Both harnesses are gated behind `--full` (or an equivalent slow-test marker)
-      so the existing pre-push hook path completes in under 2 seconds. Running
-      `tests/test-review.sh` and `tests/test-call-local.sh` without `--full` still
-      passes with the new code present.
-- [x] A baseline measurement run for the current production config (14B AWQ +
-      FP16 KV + `enforce_eager=True` + `gpu_memory_utilization=0.90`) exists as
-      `tests/results/baseline.md` plus recorded bench numbers (committed file or
-      commit message table). This baseline is the reference for every later stage.
-- [x] Stage 1 (FP8 KV cache on current AWQ model) has been run: bench numbers and
-      `tests/results/stage1-*.md` exist, and the stage outcome is recorded in the
-      commit message as either "adopted as new winning config," "reverted (quality
-      regression)," or "reverted (load failure)" with the evidence that drove the
-      decision.
-- [x] Stage 2 (vLLM upgrade evaluation) has been run: a throwaway venv was used
-      (primary `.venv/` untouched unless the upgrade was adopted), bench+eval
-      numbers were captured, and the outcome is recorded as either "adopted"
-      (with `setup.sh` pin updated and reason in commit message) or "discarded"
-      (with reason). If discarded, the throwaway venv is removed.
-- [x] Stage 3 (`Qwen/Qwen2.5-Coder-32B-Instruct-AWQ` at reduced context) has been
-      run: bench+eval numbers exist (or an explicit "failed to load at every
-      tested `max_model_len`" record with the OOM evidence), and the outcome is
-      recorded as "promoted to default," "documented as opt-in via `LOCAL_MODEL`,"
-      or "rejected" with reason.
-- [x] Stage 4 (FP8-dynamic 14B weights variant) has been run, or explicitly
-      skipped with a recorded reason (e.g., "Stage 2 vLLM upgrade not adopted so
-      FP8 weight kernels still unavailable" or "exact HF repo not found"). A skip
-      is a valid stage outcome as long as the reason is recorded.
-- [x] Stages progressed strictly sequentially: each stage's bench numbers and
-      eval side-by-side are captured before the next stage begins, visible as
-      either per-stage commits or a per-stage entry in a results log. The
-      configuration each stage starts from is the winning config from the prior
-      stage (Stage N does not re-run Stage N-1's experiments from scratch).
-- [x] **Done condition (exactly one of A or B is met):**
-      - **(A)** `review.py` adopts a new default config that beat baseline on the
-        eval harness. The prior config is recoverable via git history (the
-        winning kwargs are inlined into the `LLM()` construction; reverting one
-        commit restores the pre-Stage-1 path bit-identically). The new default
-        is documented in `README.md`, and the live-inference test
-        (`tests/test-review.sh` Test 3 with `--full`) exercises the actual
-        production code path end-to-end on the configured model.
-      - **(B)** No stage produced a configuration that beat baseline on the eval
-        harness. `CLAUDE.md` gains a dated, concise "Inference config rationale"
-        section naming what was tested, what was measured, and why the current
-        config won, so the question is not re-investigated in a future session.
-
-      *Note (post-completion):* the original wording of (A) required a runtime
-      `LOCAL_INFERENCE_MODE=legacy` toggle. The toggle was implemented in
-      `c53d898`, then removed in the follow-up commit on the grounds that (a)
-      the perf wins are unambiguous and the quality sample (4 fixtures) showed
-      no regression, (b) `git revert` is the actual rollback mechanism if a
-      future regression surfaces, and (c) speculative scaffolding is
-      discouraged by the project's coding conventions. The harness in
-      `tests/_harness.py` retains the named `baseline` config, so the prior
-      configuration remains re-runnable from disk without needing a runtime
-      switch.
-- [x] `review.py` public contract is preserved end-to-end: stdin diff -> stdout
-      findings -> stderr `[qwen]` status line -> exit 0 on all paths including
-      fatal errors. `tests/test-review.sh` (all 6 tests including the fast path)
-      and `tests/test-call-local.sh` pass on the final code.
-- [x] Fail-open behavior verified on the final adopted config: a deliberate OOM
-      (e.g., oversized fake diff or a known-bad `LOCAL_MAX_MODEL_LEN`) produces a
-      structured `[qwen] ... error: ... -- 0 in / 0 out -- Ns` stderr line and
-      exit 0, same as before.
-- [x] No modifications to `~/src/zat.env/` or `~/.config/claude-reviewers/.env`
-      were made. Git status outside this repo is unchanged.
+- [ ] All actionable code-level findings from the 2026-04-11 code review are
+      resolved: stale `build_llm_kwargs` comment (review.py:14), stale
+      line-number references and "mirrors exactly" comment
+      (tests/_harness.py:52,64), `os.sys.executable` non-public API usage
+      (tests/_harness.py:26), and prefill TPS measurement bias
+      (tests/_harness.py docstring, per CODEREVIEW NOTE on lines 232-318).
+      The remaining WARN (SPEC.md done condition A rewording) is recorded in
+      CODEREVIEW.md Accepted Risks.
+- [ ] review.py's VRAM preflight threshold is updated based on a measured
+      analysis of vLLM's actual startup VRAM requirement for the production
+      config (14B AWQ + FP8 KV + 32K context + `gpu_memory_utilization=0.90`).
+      The analysis derives the threshold from observed values, not
+      back-of-envelope estimates, and the reasoning is recorded in a code
+      comment at the preflight check. README.md risk #1 (VRAM headroom) is
+      updated to reflect the new threshold.
+- [ ] A test verifies the VRAM preflight code path: warning fires when free
+      VRAM is below the threshold, does not fire when above. The test runs
+      without loading the vLLM model (no ~30s overhead), keeping it eligible
+      for the fast test suite.
+- [ ] Eight new diff fixtures exist covering a 2x2x2 matrix: {Python, C++} x
+      {correct code, buggy code} x {simple, subtle}. "Correct/simple"
+      fixtures are obviously clean code. "Correct/subtle" fixtures contain
+      code that looks suspicious but has no real defect (false-positive
+      resistance). "Buggy/simple" fixtures contain clear bugs. "Buggy/subtle"
+      fixtures contain non-obvious bugs the model must work to detect. Each
+      fixture has a header comment documenting its matrix position (language,
+      condition, difficulty), the expected reviewer behavior, and an explicit
+      "intentional test data" marker so review tools do not treat purposeful
+      defects as findings to fix.
+- [ ] A test script runs the quality fixtures through the production config
+      and checks: (a) every buggy fixture produces at least one `[BLOCK]` or
+      `[WARN]` finding, (b) every correct fixture produces zero `[BLOCK]` or
+      `[WARN]` findings (`[NOTE]` is acceptable, "No issues found." is
+      acceptable). The script reports pass/fail per fixture with a summary
+      line. Fixtures where the model misses the expected behavior are flagged
+      as known capability limitations rather than infrastructure failures.
+- [ ] Quality fixture tests are gated behind `--full` (or equivalent explicit
+      opt-in) and do not run in the fast pre-push path. The script header
+      documents expected wall-clock run time.
+- [ ] Quality fixture results for the production config are committed to
+      `tests/results/` so future config or prompt changes can be diffed
+      against the reference.
+- [ ] Existing fast tests (test-review.sh, test-call-local.sh) pass with all
+      changes in place.
 
 ### Context
 
-**Source plan (advisory).** `~/.claude/plans/abstract-yawning-raven.md` is the
-planning document this spec implements. Treat it as design notes, not
-specification. When plan details conflict with observed behavior (e.g., a vLLM
-API detail differs from what the plan claims), trust the code.
+**Prior turn (abstract-yawning-raven).** Adopted FP8 KV cache as the default
+inference config: +58% decode TPS, +36% prefill, -0.91 GB VRAM vs baseline.
+Three alternatives rejected with evidence. The post-turn code review (2 WARNs,
+7 NOTEs) found the VRAM preflight threshold was too lax (fixed from <10 GB to
+<14 GB) plus stale comments left behind by the toggle add-then-remove sequence.
+The 2026-04-11 CODEREVIEW.md has the full findings list.
 
-**Current production configuration** (`review.py:118-133`, commit `8321af1` +
-`2f56c64`): `Qwen/Qwen2.5-Coder-14B-Instruct-AWQ`, `max_model_len=32768`,
-`gpu_memory_utilization=0.90`, `enforce_eager=True`, no explicit `kv_cache_dtype`
-(implicit FP16), sampling `temperature=0.2, top_p=0.8, top_k=20,
-repetition_penalty=1.05, max_tokens=4096`. `enforce_eager=True` exists to avoid
-a CUDA-graph-induced OOM fixed in `8321af1`; any re-enablement of CUDA graphs
-must re-verify there is no OOM regression.
+**VRAM preflight background.** The current <14 GB threshold was set in commit
+2f6ccaf based on the README's recommendation, but a 16.91 GB OOM was observed
+during the review itself (above 14, so the preflight did not fire). vLLM's
+startup check is `free >= gpu_memory_utilization * total` (0.90 * 19.55 =
+17.6 GB). The analysis this turn should measure the actual free-VRAM-at-startup
+values (before torch import, after torch import, etc.) and set the threshold to
+catch cases that vLLM will reject.
 
-**Hardware budget.** RTX 4000 SFF Ada, sm_89, 20 GB VRAM, 70 W TDP, CUDA 13.x.
-Ada's 4th-gen tensor cores have hardware FP8 (E4M3/E5M2). vLLM 0.19.0 supports
-`kv_cache_dtype="fp8_e4m3"`. Machete kernels are gated on `min_capability=90`
-in 0.19.0, so sm_89 currently uses Marlin for AWQ. Whether a later vLLM lowers
-that gate is one of the Stage 2 questions. Back-of-envelope VRAM: 14B AWQ + FP16
-KV at 32K context ~= 15 GB; 14B AWQ + FP8 KV ~= 12 GB; 32B AWQ + FP8 KV at 16K
-context ~= 18 GB (tight).
+**Existing fixture corpus.** Four diffs under `tests/fixtures/diffs/` (01 through
+04) serve as the bench/eval comparison corpus and have committed baseline and
+FP8 KV results. The 14B model catches 01 (cmd injection) and 02 (off-by-one),
+passes 03 (benign sampling change), and misses 04 (path traversal) on both
+configs. New quality fixtures are additive, not replacements.
 
-**Stage-pause discipline.** The user explicitly wants a pause and review after
-each stage, within a single turn. Checking off a stage's acceptance item before
-starting the next is how the pause is made mechanically visible; verifying this
-spec means confirming that bench numbers and eval outputs for Stage N exist
-before Stage N+1's changes appear in the history.
+**Quality fixture design constraints.** The model runs at temperature=0.2, which
+gives fairly stable output. Fixtures should be designed with margin: simple-buggy
+should trigger BLOCK/WARN reliably across runs, not just sometimes. Subtle-buggy
+may have a lower hit rate, and the committed results document the model's actual
+capability. Correct-subtle fixtures (suspicious-looking but sound code) are the
+highest-value test: false positives erode trust faster than false negatives.
 
-**Valid stage outcomes.** A stage can legitimately end in "reverted, no code
-change" or "skipped with reason." What is not acceptable is starting Stage N+1
-without a recorded decision (adopt / revert / skip) on Stage N. Failure to load
-a model due to OOM, a vLLM build error, or a missing HF repo is a valid recorded
-outcome and lets the spec progress.
+**Codereview interaction with intentional-bug fixtures.** `/codereview` reviews
+the uncommitted diff, not the full repo. Once committed, fixture `.patch` files
+are inert: they are not in the diff, so codereview does not evaluate them and
+codefix does not attempt to "fix" the intentional bugs. The risk window is the
+commit that adds the fixtures. The header comment ("intentional test data")
+plus the file location (`tests/fixtures/diffs/`) and extension (`.patch`) are
+sufficient for codereview's precision-biased instructions to recognize test data.
+No changes to codereview or codefix are needed.
 
-**Legacy toggle shape (done condition A).** The legacy toggle restores the
-exact pre-change `LLM()` arguments used in the baseline (including
-`enforce_eager=True` and absence of `kv_cache_dtype`). A test must confirm the
-toggle selects different arguments at the point of `LLM()` construction, not
-just a different code branch that happens to produce the same object. Any env
-var name is acceptable; `LOCAL_INFERENCE_MODE=legacy` is the suggested shape.
-
-**Done condition B is not a consolation.** If measurement proves the current
-config wins, recording that finding in `CLAUDE.md` is a first-class deliverable
-and the turn is complete. "No change to review.py" is a legitimate outcome; the
-harness plus the recorded rationale are what this turn produced.
-
-**Non-goals.** No changes to the `review.py` CLI surface (stdin/stdout/stderr/
-exit contract). No server, no persistent process, no TCP/IP. No modifications to
-zat.env or `~/.config/claude-reviewers/.env`. No packaging or versioning changes.
-No automated quality scoring of reviews (quality is compared manually via
-committed eval outputs).
+**Subtle-bug calibration.** The existing results give a capability baseline:
+the 14B model catches pattern-matchable bugs (command injection via
+`os.system`, arithmetic off-by-one) but misses reasoning-dependent bugs
+(path traversal guards removed in a diff). "Subtle" fixtures should require
+semantic reasoning beyond pattern matching: TOCTOU races, exception swallowing
+that masks specific failures, iterator invalidation, move-after-use. The goal
+is bugs the model catches sometimes (quality signal across config changes),
+not bugs it never catches (ceiling calibration, useful but less actionable).
+If a subtle fixture reliably gets missed, document it as a known capability
+gap in the committed results rather than weakening the fixture.
 
 **Framework practices relevant to this work.**
-- *Verification over prompting.* Stage 0 is the load-bearing deliverable: every
-  claim about "stronger output" must be grounded in harness measurements, not
-  vibes.
-- *Small, committable increments.* Each stage should be at least one commit.
-  Do not stack untested stage changes.
-- *Precision over recall.* This is a reviewer project: false positives erode
-  trust. An eval run where the new config produces more findings is not
-  automatically "better" -- the findings have to be accurate.
-- *Spec is code.* Checking off a criterion requires the criterion to be
-  mechanically verifiable. Bench numbers and eval files are the artifacts.
-- *Fail-open contract is non-negotiable.* Any experiment that breaks the exit-0-
-  on-error path is a regression, not an experiment.
+- *Precision over recall.* The quality fixtures exist to measure this property:
+  does the model flag real bugs (recall) without flagging clean code (precision)?
+- *Verification over prompting.* The fixtures are the verification artifact. If
+  the model's quality on a fixture is unsatisfactory, the response is better
+  fixtures or a better prompt, not a spec change.
+- *Small, committable increments.* Three workstreams (cleanup, VRAM, fixtures)
+  can be done as separate commits within a single turn.
 
-<!-- SPEC_META: {"date":"2026-04-10","title":"Ada-aware inference experiments (abstract-yawning-raven)","criteria_total":13,"criteria_met":13} -->
+---
+*Prior spec (2026-04-10): Ada-aware inference experiments (abstract-yawning-raven). 13/13 criteria met. Adopted FP8 KV as default, rejected vLLM upgrade, 32B AWQ, and FP8 weights.*
+
+<!-- SPEC_META: {"date":"2026-04-13","title":"Cleanup, VRAM preflight, quality validation fixtures","criteria_total":8,"criteria_met":0} -->
