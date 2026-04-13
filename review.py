@@ -11,7 +11,7 @@ import time
 os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
 
 # vLLM's FlashInfer attention backend (selected when kv_cache_dtype is
-# fp8_e4m3, the new default per build_llm_kwargs) JIT-compiles kernels
+# fp8_e4m3, set at the LLM() construction below) JIT-compiles kernels
 # via ninja on first use. ninja is pip-installed at .venv/bin/ninja by
 # the vLLM dependency tree, but invoking .venv/bin/python directly does
 # not put .venv/bin on PATH the way `source .venv/bin/activate` would,
@@ -113,18 +113,31 @@ def main() -> int:
     start = time.monotonic()
     _start = start
 
-    # VRAM preflight: warn early if GPU memory looks too low.
-    # Threshold tuned for the FP8 KV default (14B AWQ + fp8_e4m3 KV cache
-    # at 32K context with gpu_memory_utilization=0.90): vLLM refuses to
-    # start when free VRAM is below ~17.6 GB on the 20 GB Ada card, so
-    # warn at <14 GB to flag likely-OOM before loading.
+    # VRAM preflight: warn early if GPU memory looks too low for vLLM.
+    #
+    # vLLM's startup check is: free >= gpu_memory_utilization * total.
+    # On the 20 GB Ada card with gpu_memory_utilization=0.90, that is
+    # 0.90 * 19.55 = 17.6 GB. Rather than hardcoding a threshold, we
+    # compute it from the same values vLLM uses, so the preflight
+    # mirrors the real check regardless of GPU or utilization setting.
+    #
+    # Measured (2026-04-13, idle GPU, after torch CUDA init):
+    #   total=20019 MiB, free=19853 MiB, needed=18017 MiB
+    #   headroom at idle: ~1836 MiB (~1.8 GB)
+    #   torch+CUDA context overhead: ~166 MiB
+    GPU_MEMORY_UTILIZATION = 0.90  # must match LLM() below
     try:
         import torch
         if torch.cuda.is_available():
-            free_gb = torch.cuda.mem_get_info()[0] / (1024 ** 3)
-            if free_gb < 14.0:
+            free_bytes, total_bytes = torch.cuda.mem_get_info()
+            free_gb = free_bytes / (1024 ** 3)
+            needed_gb = GPU_MEMORY_UTILIZATION * total_bytes / (1024 ** 3)
+            if free_gb < needed_gb:
                 print(
-                    f"[{TAG}] Warning: {free_gb:.1f}GB VRAM free, need ~14GB."
+                    f"[{TAG}] Warning: {free_gb:.1f}GB VRAM free,"
+                    f" need {needed_gb:.1f}GB"
+                    f" ({GPU_MEMORY_UTILIZATION:.0%} of"
+                    f" {total_bytes / (1024**3):.1f}GB)."
                     f" May OOM. Try: LOCAL_MAX_MODEL_LEN=8192",
                     file=sys.stderr,
                 )
@@ -142,7 +155,7 @@ def main() -> int:
     llm = LLM(
         model=model,
         max_model_len=max_model_len,
-        gpu_memory_utilization=0.90,
+        gpu_memory_utilization=GPU_MEMORY_UTILIZATION,
         enforce_eager=True,
         kv_cache_dtype="fp8_e4m3",
     )

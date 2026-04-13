@@ -120,7 +120,7 @@ The general lesson from those failures: on a 20 GB Ada card, doubling weight VRA
 ### Risks and what to watch
 
 1. **VRAM headroom is tight, just less tight than before.** 18.12 GB used out of 19.55 GB total, roughly **1.4 GB headroom**. The baseline had only ~0.5 GB. Things that could push it over the edge:
-   - Another GPU process holding memory between vLLM invocations. The existing preflight in `review.py` warns at `<10 GB` free, which is far too lax for the new budget; the actual safe bound is closer to `<14 GB` free, but the warning has not been retuned to avoid unrelated changes.
+   - Another GPU process holding memory between vLLM invocations. The preflight in `review.py` now computes its threshold from `gpu_memory_utilization * total` (0.90 * 19.55 = 17.6 GB), which mirrors vLLM's own startup check. Measured at idle (2026-04-13): ~1.8 GB headroom after torch CUDA init. Any process using more than ~1.8 GB of VRAM will trigger the preflight warning.
    - A future vLLM upgrade with different memory accounting.
    - Re-enabling CUDA graphs (`enforce_eager=False`). The original reason `enforce_eager=True` was set in commit `8321af1` was a CUDA-graph OOM. The new headroom may or may not be enough to fix that; it would need re-measuring before flipping the flag.
 

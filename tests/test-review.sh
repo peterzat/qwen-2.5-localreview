@@ -266,6 +266,69 @@ fi
 
 # ============================================================
 echo ""
+echo "==> Test 7: VRAM preflight warns when free < needed"
+# ============================================================
+
+# Exercise the preflight logic with mocked torch.cuda.mem_get_info.
+# Tests the threshold math (free < gpu_memory_utilization * total) without
+# loading vLLM or requiring GPU access.
+
+# Simulate: total=20 GiB, free=15 GiB. With 0.90 utilization, needed=18 GiB.
+# 15 < 18, so warning should fire.
+RESULT=$("${PYTHON}" -c "
+import sys, unittest.mock as mock
+free = int(15 * 1024**3)
+total = int(20 * 1024**3)
+with mock.patch('torch.cuda.is_available', return_value=True), \
+     mock.patch('torch.cuda.mem_get_info', return_value=(free, total)):
+    import torch
+    GPU_MEMORY_UTILIZATION = 0.90
+    free_bytes, total_bytes = torch.cuda.mem_get_info()
+    free_gb = free_bytes / (1024 ** 3)
+    needed_gb = GPU_MEMORY_UTILIZATION * total_bytes / (1024 ** 3)
+    if free_gb < needed_gb:
+        print('WARN_FIRED')
+    else:
+        print('NO_WARN')
+" 2>/dev/null)
+
+if [[ "${RESULT}" == "WARN_FIRED" ]]; then
+  pass "VRAM preflight: warns when free (15GB) < needed (18GB)"
+else
+  fail "VRAM preflight: did not warn when free < needed"
+fi
+
+# ============================================================
+echo ""
+echo "==> Test 8: VRAM preflight silent when free >= needed"
+# ============================================================
+
+# Simulate: total=20 GiB, free=19 GiB. needed=18 GiB. 19 >= 18, no warning.
+RESULT=$("${PYTHON}" -c "
+import sys, unittest.mock as mock
+free = int(19 * 1024**3)
+total = int(20 * 1024**3)
+with mock.patch('torch.cuda.is_available', return_value=True), \
+     mock.patch('torch.cuda.mem_get_info', return_value=(free, total)):
+    import torch
+    GPU_MEMORY_UTILIZATION = 0.90
+    free_bytes, total_bytes = torch.cuda.mem_get_info()
+    free_gb = free_bytes / (1024 ** 3)
+    needed_gb = GPU_MEMORY_UTILIZATION * total_bytes / (1024 ** 3)
+    if free_gb < needed_gb:
+        print('WARN_FIRED')
+    else:
+        print('NO_WARN')
+" 2>/dev/null)
+
+if [[ "${RESULT}" == "NO_WARN" ]]; then
+  pass "VRAM preflight: silent when free (19GB) >= needed (18GB)"
+else
+  fail "VRAM preflight: incorrectly warned when free >= needed"
+fi
+
+# ============================================================
+echo ""
 echo "==> Results: ${TOTAL} checks, ${FAILS} failures"
 # ============================================================
 

@@ -171,7 +171,7 @@
 
 ### Accepted Risks
 
-None.
+- SPEC.md done condition (A) was reworded post-completion (commit 3f1c01c) to remove the `LOCAL_INFERENCE_MODE=legacy` toggle requirement after the toggle was deleted. The rewording is documented in a post-completion note with rationale. Accepted: the toggle was speculative scaffolding, `git revert` is the actual rollback mechanism, and `tests/_harness.py` retains the baseline config for re-measurement.
 
 ---
 *Prior review (2026-04-09): Refresh review of VRAM preflight, structured fatal error handler, memory tuning, and LOCAL_MAX_MODEL_LEN env var. One NOTE (fail-open sys.exit(0) masking failures) -- design-intended per CLAUDE.md. No BLOCKs or WARNs.*

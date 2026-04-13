@@ -9,6 +9,7 @@ harnesses. Stays consistent with review.py's LLM() construction so that
 from __future__ import annotations
 
 import os
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,7 +24,7 @@ os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
 # not put that directory on PATH the way `source .venv/bin/activate` would,
 # so subprocess.run("ninja", ...) inside flashinfer fails. Prepend the
 # venv's bin dir to PATH so any tool installed there is reachable.
-_venv_bin = os.path.dirname(os.sys.executable)
+_venv_bin = os.path.dirname(sys.executable)
 if _venv_bin and _venv_bin not in os.environ.get("PATH", "").split(os.pathsep):
     os.environ["PATH"] = _venv_bin + os.pathsep + os.environ.get("PATH", "")
 
@@ -49,7 +50,7 @@ class InferenceConfig:
     sampling_kwargs: dict[str, Any] = field(default_factory=dict)
 
 
-# Sampling kwargs match review.py:127-133 (commit 2f56c64).
+# Sampling kwargs match review.py's SamplingParams() construction.
 DEFAULT_SAMPLING = {
     "temperature": 0.2,
     "top_p": 0.8,
@@ -60,8 +61,8 @@ DEFAULT_SAMPLING = {
 
 
 CONFIGS: dict[str, InferenceConfig] = {
-    # Mirrors review.py:120-125 exactly. This is the reference point for
-    # every later stage; do not edit unless review.py changes.
+    # Pre-Stage-1 review.py config (before commit c53d898). Intentionally
+    # frozen as the historical reference -- do not update when review.py changes.
     "baseline": InferenceConfig(
         name="baseline",
         model="Qwen/Qwen2.5-Coder-14B-Instruct-AWQ",
@@ -244,6 +245,13 @@ def run_corpus(config: InferenceConfig) -> CorpusRun:
 
     Doubles the per-fixture work but gives honest, separable numbers and
     keeps the spec criterion (per-diff prefill TPS and decode TPS) real.
+
+    Note: the prefill probe (max_tokens=1) includes one decode step in its
+    wall time, so prefill TPS is slightly under-reported. Because decode
+    speed differs between configs, the under-reporting is asymmetric and
+    the reported relative prefill speedup is slightly exaggerated (~10-12%
+    per-config error for 400-500 prompt tokens on 14B AWQ). Decode TPS is
+    unaffected since it subtracts the prefill measurement.
     """
     from vllm import RequestOutput, SamplingParams
 
