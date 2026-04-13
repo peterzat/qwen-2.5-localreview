@@ -1,0 +1,71 @@
+# Quality validation fixture -- INTENTIONAL TEST DATA
+# Matrix: C++ / correct / subtle
+# Expected: No issues found, or NOTE-level only. Zero BLOCK/WARN.
+# This code looks like it has pointer/iterator issues but is actually
+# correct. The raw pointer arithmetic in compact() appears off-by-one
+# but the sentinel-based loop terminates correctly. The erase in
+# remove_expired() looks like iterator invalidation but std::list
+# erase returns a valid next iterator, and the loop uses it properly.
+# Tests false-positive resistance for C++ memory/iterator patterns.
+=== DIFF ===
+diff --git a/src/pool.cpp b/src/pool.cpp
+index 1111111..2222222 100644
+--- a/src/pool.cpp
++++ b/src/pool.cpp
+@@ -1,8 +1,52 @@
+-#include "pool.h"
++#include "pool.h"
++#include <list>
++#include <cstring>
++#include <ctime>
++
++struct Entry {
++    char key[64];
++    time_t expires;
++    int value;
++};
+
+-Pool::Pool() = default;
+-Pool::~Pool() = default;
++static std::list<Entry> entries;
++
++void pool_add(const char* key, int value, int ttl_seconds) {
++    Entry e;
++    std::strncpy(e.key, key, sizeof(e.key) - 1);
++    e.key[sizeof(e.key) - 1] = '\0';
++    e.expires = std::time(nullptr) + ttl_seconds;
++    e.value = value;
++    entries.push_back(e);
++}
++
++void pool_remove_expired() {
++    // std::list::erase returns iterator to next element; this is the
++    // standard safe-erase pattern for std::list.
++    auto it = entries.begin();
++    time_t now = std::time(nullptr);
++    while (it != entries.end()) {
++        if (it->expires < now) {
++            it = entries.erase(it);
++        } else {
++            ++it;
++        }
++    }
++}
++
++int pool_compact(char* buf, int buf_size) {
++    // Pack live keys into buf separated by newlines.
++    // write_pos tracks bytes written; stops before buf_size to leave
++    // room for the null terminator.
++    int write_pos = 0;
++    for (const auto& e : entries) {
++        int key_len = static_cast<int>(std::strlen(e.key));
++        if (write_pos + key_len + 1 >= buf_size) {
++            break;
++        }
++        std::memcpy(buf + write_pos, e.key, key_len);
++        write_pos += key_len;
++        buf[write_pos++] = '\n';
++    }
++    buf[write_pos] = '\0';
++    return write_pos;
++}

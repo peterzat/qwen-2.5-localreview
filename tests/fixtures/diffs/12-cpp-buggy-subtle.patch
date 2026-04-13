@@ -1,0 +1,67 @@
+# Quality validation fixture -- INTENTIONAL TEST DATA
+# Matrix: C++ / buggy / subtle
+# Expected: At least one BLOCK or WARN finding.
+# The bug: process_queue() calls handlers_.at(msg.type) which may
+# trigger a callback that calls register_handler(), inserting into
+# handlers_ while the range-based for loop over pending_ is safe
+# (vector is copied), but the .at() call on handlers_ uses a
+# reference into a std::unordered_map that could be invalidated if
+# register_handler() triggers a rehash. Additionally, the move in
+# dispatch() transfers ownership of msg.payload, but the caller in
+# process_queue still holds a reference to msg after the move,
+# and the log line on line 42 reads msg.payload after it was moved.
+=== DIFF ===
+diff --git a/src/dispatcher.cpp b/src/dispatcher.cpp
+index aaa1111..bbb2222 100644
+--- a/src/dispatcher.cpp
++++ b/src/dispatcher.cpp
+@@ -1,14 +1,48 @@
+ #include "dispatcher.h"
++#include <functional>
++#include <unordered_map>
++#include <vector>
++#include <string>
++#include <iostream>
+
+-void Dispatcher::dispatch(const Message& msg) {
+-    for (auto& handler : handlers_) {
+-        handler(msg);
+-    }
++struct Message {
++    std::string type;
++    std::string payload;
++};
++
++class Dispatcher {
++public:
++    using Handler = std::function<void(std::string)>;
++
++    void register_handler(const std::string& type, Handler h) {
++        handlers_[type] = std::move(h);
++    }
++
++    void enqueue(Message msg) {
++        pending_.push_back(std::move(msg));
++    }
++
++    void process_queue() {
++        auto batch = std::move(pending_);
++        for (auto& msg : batch) {
++            dispatch(msg);
++        }
++    }
++
++private:
++    void dispatch(Message& msg) {
++        auto it = handlers_.find(msg.type);
++        if (it == handlers_.end()) {
++            return;
++        }
++        it->second(std::move(msg.payload));
++        std::cout << "dispatched: " << msg.type
++                  << " payload=" << msg.payload << std::endl;
++    }
++
++    std::unordered_map<std::string, Handler> handlers_;
++    std::vector<Message> pending_;
+ }

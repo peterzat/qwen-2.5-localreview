@@ -1,0 +1,41 @@
+# Quality validation fixture -- INTENTIONAL TEST DATA
+# Matrix: Python / correct / simple
+# Expected: No issues found, or NOTE-level only. Zero BLOCK/WARN.
+# This is clean, idiomatic Python with no bugs or security issues.
+=== DIFF ===
+diff --git a/models/user.py b/models/user.py
+new file mode 100644
+--- /dev/null
++++ b/models/user.py
+@@ -0,0 +1,32 @@
++"""User model with validation."""
++from dataclasses import dataclass, field
++from datetime import datetime, timezone
++from typing import Optional
++
++
++@dataclass
++class User:
++    username: str
++    email: str
++    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
++    display_name: Optional[str] = None
++
++    def __post_init__(self) -> None:
++        if not self.username or not self.username.strip():
++            raise ValueError("username must be non-empty")
++        if "@" not in self.email:
++            raise ValueError("email must contain @")
++        self.username = self.username.strip().lower()
++
++    @property
++    def greeting(self) -> str:
++        name = self.display_name or self.username
++        return f"Hello, {name}"
++
++    def is_older_than_days(self, days: int) -> bool:
++        elapsed = datetime.now(timezone.utc) - self.created_at
++        return elapsed.days > days
++
++    def __repr__(self) -> str:
++        return f"User(username={self.username!r}, email={self.email!r})"

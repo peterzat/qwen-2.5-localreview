@@ -1,0 +1,56 @@
+# Quality validation fixture -- INTENTIONAL TEST DATA
+# Matrix: Python / buggy / subtle
+# Expected: At least one BLOCK or WARN finding.
+# The bug: the broad except clause on line 32 catches KeyboardInterrupt
+# and SystemExit, so Ctrl-C and sys.exit() during a retry are silently
+# swallowed. The retry loop becomes unkillable on persistent failures.
+# This requires reasoning about exception hierarchy (BaseException vs
+# Exception) -- not pattern-matchable from keywords alone.
+=== DIFF ===
+diff --git a/client/retry.py b/client/retry.py
+index aaa1111..bbb2222 100644
+--- a/client/retry.py
++++ b/client/retry.py
+@@ -1,20 +1,35 @@
+-"""HTTP client with basic retry."""
++"""HTTP client with configurable retry."""
+ import time
+ import logging
+-import requests
++import urllib.request
++import urllib.error
+
+ logger = logging.getLogger(__name__)
+
++MAX_RETRIES = 5
++BACKOFF_BASE = 0.5
+
+-def fetch(url: str, retries: int = 3) -> str:
+-    for attempt in range(retries):
++
++def fetch(url: str) -> str:
++    """Fetch URL content with exponential backoff retry.
++
++    Retries on any transient failure. Returns the decoded response body.
++    """
++    last_error = None
++    for attempt in range(MAX_RETRIES):
+         try:
+-            resp = requests.get(url, timeout=10)
+-            resp.raise_for_status()
+-            return resp.text
+-        except requests.RequestException as e:
+-            if attempt == retries - 1:
+-                raise
+-            time.sleep(2 ** attempt)
+-    # unreachable, but satisfies type checker
+-    raise RuntimeError("retry exhausted")
++            req = urllib.request.Request(url)
++            with urllib.request.urlopen(req, timeout=10) as resp:
++                return resp.read().decode()
++        except:
++            last_error = True
++            delay = BACKOFF_BASE * (2 ** attempt)
++            logger.warning("Attempt %d failed, retrying in %.1fs", attempt + 1, delay)
++            time.sleep(delay)
++    raise RuntimeError(f"All {MAX_RETRIES} attempts failed for {url}")

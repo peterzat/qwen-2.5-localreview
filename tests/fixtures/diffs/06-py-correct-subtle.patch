@@ -1,0 +1,55 @@
+# Quality validation fixture -- INTENTIONAL TEST DATA
+# Matrix: Python / correct / subtle
+# Expected: No issues found, or NOTE-level only. Zero BLOCK/WARN.
+# This code looks suspicious (subprocess, dynamic path construction,
+# user-controlled format strings) but every usage is actually safe.
+# Tests false-positive resistance.
+=== DIFF ===
+diff --git a/deploy/health.py b/deploy/health.py
+new file mode 100644
+--- /dev/null
++++ b/deploy/health.py
+@@ -0,0 +1,41 @@
++"""Health check runner for deploy verification."""
++import json
++import subprocess
++import os
++from pathlib import Path
++
++
++ALLOWED_CHECKS = frozenset({"disk", "memory", "network"})
++CHECK_TIMEOUT = 10
++
++
++def run_check(check_name: str) -> dict:
++    """Run a predefined health check by name.
++
++    check_name is validated against ALLOWED_CHECKS before use.
++    The subprocess call uses a list (no shell=True) with a
++    hardcoded script path, so check_name only selects which
++    fixed script to run, never reaches a shell interpreter.
++    """
++    if check_name not in ALLOWED_CHECKS:
++        raise ValueError(f"Unknown check: {check_name!r}")
++
++    script_dir = Path(__file__).parent / "checks"
++    script = script_dir / f"{check_name}.sh"
++    if not script.is_file():
++        raise FileNotFoundError(f"Check script missing: {script}")
++
++    result = subprocess.run(
++        [str(script)],
++        capture_output=True,
++        text=True,
++        timeout=CHECK_TIMEOUT,
++    )
++    return {
++        "check": check_name,
++        "returncode": result.returncode,
++        "stdout": result.stdout.strip(),
++    }
++
++
++def run_all() -> list[dict]:
++    """Run all health checks and return results."""
++    return [run_check(name) for name in sorted(ALLOWED_CHECKS)]

@@ -1,0 +1,37 @@
+# Quality validation fixture -- INTENTIONAL TEST DATA
+# Matrix: Python / buggy / simple
+# Expected: At least one BLOCK or WARN finding.
+# Contains an obvious SQL injection via f-string interpolation of
+# user input directly into a query string.
+=== DIFF ===
+diff --git a/db/queries.py b/db/queries.py
+new file mode 100644
+--- /dev/null
++++ b/db/queries.py
+@@ -0,0 +1,22 @@
++"""Database query helpers."""
++import sqlite3
++from pathlib import Path
++
++DB_PATH = Path(__file__).parent / "app.db"
++
++
++def get_connection() -> sqlite3.Connection:
++    return sqlite3.connect(str(DB_PATH))
++
++
++def find_user(username: str) -> dict | None:
++    conn = get_connection()
++    query = f"SELECT id, username, email FROM users WHERE username = '{username}'"
++    row = conn.execute(query).fetchone()
++    conn.close()
++    if row is None:
++        return None
++    return {"id": row[0], "username": row[1], "email": row[2]}
++
++
++def count_users() -> int:
++    conn = get_connection()
++    row = conn.execute("SELECT COUNT(*) FROM users").fetchone()
++    conn.close()
++    return row[0]
