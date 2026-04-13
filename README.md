@@ -16,7 +16,7 @@ cd ~/src/qwen-2.5-localreview
 ./setup.sh
 ```
 
-`setup.sh` is idempotent. It creates the venv, installs vLLM, downloads the model to the shared HuggingFace cache, and adds config entries to `~/.config/claude-reviewers/.env`. Re-run after `git pull` if the script changed (new vLLM version, new model).
+`setup.sh` is idempotent. It creates the venv, installs vLLM, downloads the model to the shared HuggingFace cache, and configures git hooks. Re-run after `git pull` if the script changed (new vLLM version, new model).
 
 ## Architecture
 
