@@ -406,6 +406,83 @@ fi
 
 # ============================================================
 echo ""
+echo "==> Test 12: dry-run unaffected by held GPU flock"
+# ============================================================
+
+# Acquire the GPU flock in a background process, then verify --dry-run
+# still works (it exits before the flock acquisition point in review.py).
+LOCK_PATH=$("${PYTHON}" -c "import gpu_lock; print(gpu_lock.lock_path())" 2>/dev/null)
+
+if [[ -n "${LOCK_PATH}" ]] && ${HAS_MODEL}; then
+  # Hold the flock in a background subshell for 10 seconds.
+  (
+    "${PYTHON}" -c "
+import gpu_lock, time
+f = gpu_lock.acquire_gpu_lock(timeout=1.0)
+if f: time.sleep(10)
+" 2>/dev/null
+  ) &
+  LOCK_PID=$!
+  sleep 1  # give it time to acquire
+
+  STDERR_FILE="${TEST_DIR}/stderr12.txt"
+  "${PYTHON}" "${SCRIPT}" \
+    --system "${TEST_DIR}/system9.txt" \
+    --input "${TEST_DIR}/input9.txt" \
+    --dry-run \
+    2>"${STDERR_FILE}" || true
+
+  if grep -q "dry-run" "${STDERR_FILE}"; then
+    pass "dry-run unaffected by held GPU flock"
+  else
+    fail "dry-run blocked by GPU flock"
+    echo "    stderr: $(cat "${STDERR_FILE}")"
+  fi
+
+  kill "${LOCK_PID}" 2>/dev/null || true; wait "${LOCK_PID}" 2>/dev/null || true
+else
+  echo "  SKIP (model not in HF cache or lock path unavailable)"
+fi
+
+# ============================================================
+echo ""
+echo "==> Test 13: GPU busy when flock held"
+# ============================================================
+
+# Hold the flock, run review.py (non-dry-run) with a tiny flock timeout.
+# The flock acquisition in review.py uses 270s by default; we override
+# via LOCAL_GPU_LOCK_TIMEOUT for testing.
+if [[ -n "${LOCK_PATH}" ]] && ${HAS_MODEL}; then
+  (
+    "${PYTHON}" -c "
+import gpu_lock, time
+f = gpu_lock.acquire_gpu_lock(timeout=1.0)
+if f: time.sleep(10)
+" 2>/dev/null
+  ) &
+  LOCK_PID=$!
+  sleep 1
+
+  STDERR_FILE="${TEST_DIR}/stderr13.txt"
+  LOCAL_GPU_LOCK_TIMEOUT=1 "${PYTHON}" "${SCRIPT}" \
+    --system "${TEST_DIR}/system9.txt" \
+    --input "${TEST_DIR}/input9.txt" \
+    2>"${STDERR_FILE}" || true
+
+  if grep -q "GPU busy" "${STDERR_FILE}"; then
+    pass "GPU busy diagnostic when flock held"
+  else
+    fail "missing GPU busy diagnostic"
+    echo "    stderr: $(cat "${STDERR_FILE}")"
+  fi
+
+  kill "${LOCK_PID}" 2>/dev/null || true; wait "${LOCK_PID}" 2>/dev/null || true
+else
+  echo "  SKIP (model not in HF cache or lock path unavailable)"
+fi
+
+# ============================================================
+echo ""
 echo "==> Results: ${TOTAL} checks, ${FAILS} failures"
 # ============================================================
 

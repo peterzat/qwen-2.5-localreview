@@ -121,6 +121,14 @@ def main() -> int:
         print(f"[{TAG}] dry-run: input valid, {user_tokens} tokens", file=sys.stderr)
         return 0
 
+    # GPU mutex: serialize concurrent invocations via flock.
+    from gpu_lock import acquire_gpu_lock
+    lock_timeout = float(os.environ.get("LOCAL_GPU_LOCK_TIMEOUT", "270"))
+    lock_file = acquire_gpu_lock(timeout=lock_timeout)
+    if lock_file is None:
+        print(f"[{TAG}] GPU busy (another review running), skipping", file=sys.stderr)
+        return 0
+
     # Load model and run inference.
     start = time.monotonic()
     _start = start
