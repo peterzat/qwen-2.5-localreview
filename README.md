@@ -32,7 +32,7 @@ review-external.sh (zat.env)
                    VRAM freed on exit
 ```
 
-Each invocation loads the model (~30-60s), runs inference (~60-120s), then exits and frees all GPU resources. The OS page cache keeps model files in RAM (64GB DDR4) so repeat invocations skip most disk I/O. Concurrent invocations serialize via a flock-based GPU mutex (`$XDG_RUNTIME_DIR/qwen-localreview.lock`). See also the optional keep-warm mode below for avoiding the model load cost on serial reviews.
+Without the warm server, each invocation loads the model (~30s), runs inference (~1-7s per diff), then exits and frees all GPU resources. The OS page cache keeps model files in RAM (64GB DDR4) so repeat invocations skip most disk I/O. Concurrent invocations serialize via a flock-based GPU mutex (`$XDG_RUNTIME_DIR/qwen-localreview.lock`). After a successful review, the warm server auto-starts in the background so the next review skips the model load (see keep-warm mode below).
 
 ## Consumer Integration Guide
 

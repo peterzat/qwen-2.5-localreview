@@ -50,7 +50,9 @@ class InferenceConfig:
     sampling_kwargs: dict[str, Any] = field(default_factory=dict)
 
 
-# Sampling kwargs match review.py's SamplingParams() construction.
+# Sampling kwargs match review.py's SamplingParams() construction except
+# max_tokens: review.py uses an adaptive reserve, harness uses a fixed 4096
+# (frozen for benchmark comparability across config changes).
 DEFAULT_SAMPLING = {
     "temperature": 0.2,
     "top_p": 0.8,
