@@ -549,6 +549,191 @@ fi
 
 # ============================================================
 echo ""
+echo "==> Test 15: state-file wait for warm startup (mock)"
+# ============================================================
+
+# Write state=starting, then transition to ready + mock socket after 3s.
+# review.py should wait and then use the warm path.
+SOCK_PATH=$("${PYTHON}" -c "from gpu_lock import socket_path; print(socket_path())" 2>/dev/null)
+STATE_PATH=$("${PYTHON}" -c "from gpu_lock import state_path; print(state_path())" 2>/dev/null)
+
+if [[ -n "${SOCK_PATH}" && -n "${STATE_PATH}" ]]; then
+  # Clean slate.
+  rm -f "${SOCK_PATH}" "${STATE_PATH}" 2>/dev/null || true
+
+  # Background helper: write starting state, sleep, then transition to ready + mock socket.
+  "${PYTHON}" -c "
+import json, os, socket, sys, time
+
+state_path = sys.argv[1]
+sock_path = sys.argv[2]
+
+# Write starting state with our PID.
+tmp = state_path + '.tmp'
+with open(tmp, 'w') as f:
+    json.dump({'state': 'starting', 'pid': os.getpid(), 'timestamp': time.time()}, f)
+os.rename(tmp, state_path)
+
+# Simulate model load time (short for testing; review.py polls every 2s).
+time.sleep(1)
+
+# Transition to ready + start mock socket.
+with open(tmp, 'w') as f:
+    json.dump({'state': 'ready', 'pid': os.getpid(), 'timestamp': time.time()}, f)
+os.rename(tmp, state_path)
+
+if os.path.exists(sock_path):
+    os.unlink(sock_path)
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.bind(sock_path)
+s.listen(1)
+conn, _ = s.accept()
+data = b''
+while b'\n' not in data:
+    data += conn.recv(65536)
+response = json.dumps({
+    'status': 'ok',
+    'output': '[BLOCK] test.py:1 -- state-wait finding',
+    'prompt_tokens': 50,
+    'completion_tokens': 5,
+    'elapsed': 0.1,
+    'stderr_lines': [],
+})
+conn.sendall(response.encode() + b'\n')
+conn.close()
+s.close()
+os.unlink(sock_path)
+" "${STATE_PATH}" "${SOCK_PATH}" &
+  HELPER_PID=$!
+  sleep 0.5  # let it write state=starting
+
+  echo "You are a reviewer." > "${TEST_DIR}/system15.txt"
+  echo "Review this." > "${TEST_DIR}/input15.txt"
+  STDERR_FILE="${TEST_DIR}/stderr15.txt"
+  STDOUT=$("${PYTHON}" "${SCRIPT}" \
+    --system "${TEST_DIR}/system15.txt" \
+    --input "${TEST_DIR}/input15.txt" \
+    2>"${STDERR_FILE}") || true
+
+  kill "${HELPER_PID}" 2>/dev/null || true; wait "${HELPER_PID}" 2>/dev/null || true
+  rm -f "${STATE_PATH}" 2>/dev/null || true
+
+  if echo "${STDOUT}" | grep -q "state-wait finding"; then
+    pass "state-file wait: received mock response after startup wait"
+  else
+    fail "state-file wait: did not receive mock response"
+    echo "    stdout: ${STDOUT:-<empty>}"
+    echo "    stderr: $(cat "${STDERR_FILE}")"
+  fi
+
+  if grep -q "waiting" "${STDERR_FILE}"; then
+    pass "state-file wait: 'waiting' message on stderr"
+  else
+    fail "state-file wait: missing 'waiting' message on stderr"
+    echo "    stderr: $(cat "${STDERR_FILE}")"
+  fi
+else
+  echo "  SKIP (socket/state path unavailable)"
+fi
+
+# ============================================================
+echo ""
+echo "==> Test 16: stale state file (dead PID) falls to cold path"
+# ============================================================
+
+if [[ -n "${STATE_PATH}" ]] && ${HAS_MODEL}; then
+  rm -f "${SOCK_PATH}" "${STATE_PATH}" 2>/dev/null || true
+
+  # Write state=ready with a PID that does not exist.
+  "${PYTHON}" -c "
+import json, os, time, sys
+state_path = sys.argv[1]
+tmp = state_path + '.tmp'
+with open(tmp, 'w') as f:
+    json.dump({'state': 'ready', 'pid': 99999, 'timestamp': time.time()}, f)
+os.rename(tmp, state_path)
+" "${STATE_PATH}"
+
+  STDERR_FILE="${TEST_DIR}/stderr16.txt"
+  "${PYTHON}" "${SCRIPT}" \
+    --system "${TEST_DIR}/system14.txt" \
+    --input "${TEST_DIR}/input14.txt" \
+    --dry-run \
+    2>"${STDERR_FILE}" || true
+
+  rm -f "${STATE_PATH}" 2>/dev/null || true
+
+  if grep -q "dry-run" "${STDERR_FILE}"; then
+    pass "stale state: fell through to cold path (dry-run)"
+  else
+    fail "stale state: did not fall through to cold path"
+    echo "    stderr: $(cat "${STDERR_FILE}")"
+  fi
+else
+  echo "  SKIP (state path unavailable or model not in HF cache)"
+fi
+
+# ============================================================
+echo ""
+echo "==> Test 17: backward compat when state file missing"
+# ============================================================
+
+# No state file, but socket exists (old warm.py scenario).
+if [[ -n "${SOCK_PATH}" ]]; then
+  rm -f "${SOCK_PATH}" "${STATE_PATH}" 2>/dev/null || true
+
+  # Start mock socket server (same as Test 14, no state file).
+  "${PYTHON}" -c "
+import json, os, socket, sys
+sock_path = sys.argv[1]
+if os.path.exists(sock_path):
+    os.unlink(sock_path)
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.bind(sock_path)
+s.listen(1)
+conn, _ = s.accept()
+data = b''
+while b'\n' not in data:
+    data += conn.recv(65536)
+response = json.dumps({
+    'status': 'ok',
+    'output': '[WARN] test.py:1 -- backward compat finding',
+    'prompt_tokens': 50,
+    'completion_tokens': 5,
+    'elapsed': 0.1,
+    'stderr_lines': [],
+})
+conn.sendall(response.encode() + b'\n')
+conn.close()
+s.close()
+os.unlink(sock_path)
+" "${SOCK_PATH}" &
+  MOCK_PID=$!
+  sleep 0.5
+
+  echo "You are a reviewer." > "${TEST_DIR}/system17.txt"
+  echo "Review this." > "${TEST_DIR}/input17.txt"
+  STDERR_FILE="${TEST_DIR}/stderr17.txt"
+  STDOUT=$("${PYTHON}" "${SCRIPT}" \
+    --system "${TEST_DIR}/system17.txt" \
+    --input "${TEST_DIR}/input17.txt" \
+    2>"${STDERR_FILE}") || true
+
+  kill "${MOCK_PID}" 2>/dev/null || true; wait "${MOCK_PID}" 2>/dev/null || true
+
+  if echo "${STDOUT}" | grep -q "backward compat finding"; then
+    pass "backward compat: warm path works without state file"
+  else
+    fail "backward compat: did not receive mock response"
+    echo "    stdout: ${STDOUT:-<empty>}"
+    echo "    stderr: $(cat "${STDERR_FILE}")"
+  fi
+else
+  echo "  SKIP (socket path unavailable)"
+fi
+
+# ============================================================
+echo ""
 echo "==> Results: ${TOTAL} checks, ${FAILS} failures"
 # ============================================================
 

@@ -26,7 +26,7 @@ from review import (
     _output_reserve,
     truncate_to_fit,
 )
-from gpu_lock import acquire_gpu_lock, socket_path
+from gpu_lock import acquire_gpu_lock, socket_path, state_path, write_state
 
 # Suppress vLLM noise, same as review.py.
 os.environ.setdefault("VLLM_LOGGING_LEVEL", "ERROR")
@@ -74,9 +74,14 @@ class WarmServer:
         self.baseline_vram = 0
 
     def start(self) -> None:
+        # Signal intent before locking. review.py reads this to decide
+        # whether to wait for startup vs. falling to cold path.
+        write_state("starting")
+
         # Acquire GPU flock (non-blocking).
         self.lock_file = acquire_gpu_lock(timeout=0.0)
         if self.lock_file is None:
+            write_state("failed")
             _log("GPU flock held by another process, cannot start")
             sys.exit(1)
 
@@ -99,6 +104,7 @@ class WarmServer:
         self.sock.bind(self.sock_path)
         self.sock.listen(2)
 
+        write_state("ready")
         _log(f"ready on {self.sock_path} "
              f"(idle={IDLE_TIMEOUT}s, yield={VRAM_YIELD_THRESHOLD // (1024*1024)}MiB)")
 
@@ -257,6 +263,10 @@ class WarmServer:
 
     def shutdown(self) -> None:
         _log("shutting down")
+        try:
+            write_state("stopped")
+        except Exception:
+            pass
         if self.sock:
             try:
                 self.sock.close()
@@ -267,6 +277,12 @@ class WarmServer:
                 os.unlink(self.sock_path)
             except Exception:
                 pass
+        try:
+            p = state_path()
+            if os.path.exists(p):
+                os.unlink(p)
+        except Exception:
+            pass
         if self.lock_file:
             try:
                 self.lock_file.close()

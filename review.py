@@ -61,14 +61,61 @@ def truncate_to_fit(tokenizer, system_prompt, user_input, max_model_len, output_
 
 
 def _try_warm_path(system_prompt: str, user_input: str):
-    """Attempt inference via the warm server. Returns None on any failure."""
+    """Attempt inference via the warm server. Returns None on any failure.
+
+    Checks the warm server state file first:
+    - starting + PID alive: wait up to 90s for ready, then connect
+    - ready + PID alive: connect immediately
+    - missing state file: backward compat, check socket exists
+    - stopped/failed/stale PID: return None (cold path)
+    """
     import json
     import socket as sock_mod
-    from gpu_lock import socket_path
+    from gpu_lock import socket_path, read_state, pid_alive
 
     sock_path = socket_path()
-    if not os.path.exists(sock_path):
-        return None
+    state = read_state()
+
+    if state is not None:
+        srv_state = state.get("state")
+        srv_pid = state.get("pid", 0)
+
+        if srv_state == "starting" and pid_alive(srv_pid):
+            print(f"[{TAG}] Warm server starting (PID {srv_pid}), waiting...",
+                  file=sys.stderr)
+            deadline = time.monotonic() + 90.0
+            while time.monotonic() < deadline:
+                time.sleep(2.0)
+                state = read_state()
+                if state is None:
+                    return None
+                srv_state = state.get("state")
+                srv_pid = state.get("pid", 0)
+                if srv_state == "ready" and pid_alive(srv_pid):
+                    break
+                if srv_state in ("stopped", "failed"):
+                    return None
+                if not pid_alive(srv_pid):
+                    return None
+            else:
+                print(f"[{TAG}] Warm server startup timeout (90s), using cold path",
+                      file=sys.stderr)
+                return None
+
+            if srv_state != "ready":
+                return None
+
+        elif srv_state == "ready" and pid_alive(srv_pid):
+            pass  # fall through to socket connection
+
+        else:
+            # stopped, failed, stale PID, unknown state
+            return None
+
+    else:
+        # No state file: backward compat with old warm.py.
+        if not os.path.exists(sock_path):
+            return None
 
     try:
         conn = sock_mod.socket(sock_mod.AF_UNIX, sock_mod.SOCK_STREAM)
@@ -276,6 +323,17 @@ def main() -> int:
 
     # Findings to stdout.
     print(output_text)
+
+    # Release GPU lock before spawning warm.py. warm.py acquires the
+    # lock non-blocking (timeout=0), so it must be free. Without this,
+    # success depends on whether review.py's process exit races warm.py's
+    # startup to the flock call.
+    if lock_file is not None:
+        try:
+            lock_file.close()
+        except Exception:
+            pass
+        lock_file = None
 
     # Auto-start the warm server for the next review. Detached process
     # with its own session; survives after review.py exits. The flock

@@ -25,8 +25,9 @@ if "${VENV_DIR}/bin/pip" show vllm >/dev/null 2>&1; then
   INSTALLED_VERSION=$("${VENV_DIR}/bin/pip" show vllm 2>/dev/null | grep -i '^Version:' | awk '{print $2}')
   echo "[ok] vLLM ${INSTALLED_VERSION} installed"
   if [[ "${INSTALLED_VERSION}" != "${VLLM_VERSION}" ]]; then
-    echo "[!!] Pinned version is ${VLLM_VERSION}, installed is ${INSTALLED_VERSION}"
-    echo "     Run: ${VENV_DIR}/bin/pip install vllm==${VLLM_VERSION} to update"
+    echo "[!!] ERROR: Pinned vLLM is ${VLLM_VERSION}, installed is ${INSTALLED_VERSION}"
+    echo "     Run: ${VENV_DIR}/bin/pip install vllm==${VLLM_VERSION}"
+    exit 1
   fi
 else
   echo "[..] Installing vLLM ${VLLM_VERSION} (this may take a few minutes)..."

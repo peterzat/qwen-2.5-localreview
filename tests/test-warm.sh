@@ -30,13 +30,14 @@ fi
 
 SOCK_PATH=$("${PYTHON}" -c "from gpu_lock import socket_path; print(socket_path())" 2>/dev/null)
 LOCK_PATH=$("${PYTHON}" -c "from gpu_lock import lock_path; print(lock_path())" 2>/dev/null)
+STATE_PATH=$("${PYTHON}" -c "from gpu_lock import state_path; print(state_path())" 2>/dev/null)
 
 FAILS=0
 TOTAL=0
 pass() { TOTAL=$((TOTAL + 1)); printf '  ok   %s\n' "$1"; }
 fail() { TOTAL=$((TOTAL + 1)); FAILS=$((FAILS + 1)); printf '  FAIL %s\n' "$1"; }
 
-# Cleanup helper: kill warm server and remove stale socket.
+# Cleanup helper: kill warm server and remove stale socket/state.
 cleanup_warm() {
   if [[ -n "${WARM_PID:-}" ]]; then
     kill "${WARM_PID}" 2>/dev/null || true
@@ -44,6 +45,7 @@ cleanup_warm() {
     WARM_PID=""
   fi
   [[ -S "${SOCK_PATH}" ]] && rm -f "${SOCK_PATH}" || true
+  [[ -n "${STATE_PATH:-}" && -f "${STATE_PATH}" ]] && rm -f "${STATE_PATH}" || true
 }
 trap cleanup_warm EXIT
 
@@ -56,7 +58,7 @@ if [[ -n "${EXISTING_PID}" ]]; then
   kill ${EXISTING_PID} 2>/dev/null || true
   sleep 3
 fi
-rm -f "${SOCK_PATH}" 2>/dev/null || true
+rm -f "${SOCK_PATH}" "${STATE_PATH}" 2>/dev/null || true
 
 # Helper: wait for warm server socket to appear.
 wait_for_socket() {
@@ -305,6 +307,136 @@ else
 fi
 
 rm -f "${STDERR_FILE}"
+
+# ============================================================
+echo ""
+echo "==> Test 8: state file transitions (starting -> ready -> stopped)"
+# ============================================================
+
+# Start warm.py and verify state file progresses through lifecycle.
+cleanup_warm
+sleep 3
+rm -f "${STATE_PATH}" 2>/dev/null || true
+
+WARM_LOG=$(mktemp)
+LOCAL_WARM_TIMEOUT=30 "${PYTHON}" "${WARM_SCRIPT}" 2>"${WARM_LOG}" &
+WARM_PID=$!
+
+# State should be "starting" almost immediately.
+sleep 1
+if [[ -f "${STATE_PATH}" ]]; then
+  INITIAL_STATE=$("${PYTHON}" -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        print(json.load(f).get('state', ''))
+except: print('')
+" "${STATE_PATH}")
+
+  if [[ "${INITIAL_STATE}" == "starting" ]]; then
+    pass "state transitions: initial state is 'starting'"
+  else
+    # May already be 'ready' if model was cached and loaded fast.
+    if [[ "${INITIAL_STATE}" == "ready" ]]; then
+      pass "state transitions: initial state is 'starting' (fast load, already ready)"
+    else
+      fail "state transitions: initial state is '${INITIAL_STATE}', expected 'starting'"
+    fi
+  fi
+else
+  fail "state transitions: state file not created"
+fi
+
+# Wait for socket (means state should be ready).
+if wait_for_socket 90; then
+  READY_STATE=$("${PYTHON}" -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        print(json.load(f).get('state', ''))
+except: print('')
+" "${STATE_PATH}")
+
+  if [[ "${READY_STATE}" == "ready" ]]; then
+    pass "state transitions: state is 'ready' when socket available"
+  else
+    fail "state transitions: state is '${READY_STATE}', expected 'ready'"
+  fi
+else
+  fail "state transitions: warm server did not create socket"
+  echo "    log: $(cat "${WARM_LOG}")"
+fi
+
+# Kill and verify stopped/cleaned up.
+if [[ -n "${WARM_PID}" ]]; then
+  kill "${WARM_PID}" 2>/dev/null || true
+  wait "${WARM_PID}" 2>/dev/null || true
+  WARM_PID=""
+fi
+sleep 1
+
+# After clean shutdown, state file should be removed.
+if [[ ! -f "${STATE_PATH}" ]]; then
+  pass "state transitions: state file removed after shutdown"
+else
+  FINAL_STATE=$("${PYTHON}" -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        print(json.load(f).get('state', ''))
+except: print('')
+" "${STATE_PATH}")
+  # "stopped" is acceptable if unlink failed; file removed is preferred.
+  if [[ "${FINAL_STATE}" == "stopped" ]]; then
+    pass "state transitions: state file removed after shutdown (stopped, not cleaned)"
+  else
+    fail "state transitions: state file still present with state '${FINAL_STATE}'"
+  fi
+fi
+
+rm -f "${WARM_LOG}" "${STATE_PATH}" 2>/dev/null || true
+
+# ============================================================
+echo ""
+echo "==> Test 9: auto-launch creates state file after cold review"
+# ============================================================
+
+# Run a cold-path review; after it exits, verify warm.py was auto-launched
+# and state file was created.
+cleanup_warm
+sleep 3
+rm -f "${STATE_PATH}" 2>/dev/null || true
+
+STDERR_FILE=$(mktemp)
+"${PYTHON}" "${REVIEW_SCRIPT}" \
+  --system "${SYSTEM_PROMPT}" \
+  --input "${FIXTURE}" \
+  2>"${STDERR_FILE}" || true
+
+# Give warm.py a moment to start and write state file.
+sleep 2
+
+if [[ -f "${STATE_PATH}" ]]; then
+  AUTO_STATE=$("${PYTHON}" -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        print(json.load(f).get('state', ''))
+except: print('')
+" "${STATE_PATH}")
+
+  if [[ "${AUTO_STATE}" == "starting" || "${AUTO_STATE}" == "ready" ]]; then
+    pass "auto-launch: state file created (state=${AUTO_STATE})"
+  else
+    fail "auto-launch: unexpected state '${AUTO_STATE}'"
+  fi
+else
+  fail "auto-launch: state file not created after cold review"
+  echo "    stderr: $(cat "${STDERR_FILE}")"
+fi
+
+rm -f "${STDERR_FILE}"
+cleanup_warm
 
 # ============================================================
 echo ""

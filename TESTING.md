@@ -1,6 +1,6 @@
 ## Test Strategy Review -- 2026-04-13
 
-**Summary:** Four bash test suites covering review.py guard logic and warm path (test-review.sh, 18 checks), the call_local integration shim (test-call-local.sh, 12 checks), a GPU-gated quality validation matrix (test-quality.sh, 8 fixtures), and warm server lifecycle tests (test-warm.sh, 9 checks). Pre-push hook runs the two fast suites and passes. A git remote now exists, so the hook fires on actual pushes.
+**Summary:** Four bash test suites covering review.py guard logic and warm path (test-review.sh, 22 checks), the call_local integration shim (test-call-local.sh, 12 checks), a GPU-gated quality validation matrix (test-quality.sh, 8 fixtures), and warm server lifecycle tests (test-warm.sh, 13 checks). Pre-push hook runs the two fast suites and passes. A git remote now exists, so the hook fires on actual pushes.
 
 **Test infrastructure found:** bash test scripts (tests/test-review.sh, tests/test-call-local.sh, tests/test-quality.sh, tests/test-warm.sh), Python bench/eval harness (tests/_harness.py, tests/bench.py, tests/eval.py), pre-push git hook (.githooks/pre-push via core.hooksPath), git remote (origin), 12 diff fixtures (tests/fixtures/diffs/), committed results (tests/results/), no CI, no coverage tools, no Makefile
 
@@ -85,11 +85,13 @@
 ```
 
 ```
-[NOTE] Missing test categories -- None needed at current scale
-  Current state: The project is a single inference script and a shell shim.
-  Integration testing with the consumer (review-external.sh) is scoped to
-  zat.env per the boundary rule. The quality matrix provides a form of
-  acceptance testing for model output quality.
+[NOTE] Missing test categories -- Lifecycle coordination now tested
+  Current state: The project has explicit warm server state-file coordination
+  (starting/ready/stopped/failed). test-review.sh Tests 15-17 cover the
+  state-file wait (mock startup delay then ready), stale state detection
+  (dead PID), and backward compatibility (no state file, socket-only).
+  test-warm.sh Tests 8-9 cover state file lifecycle transitions and
+  auto-launch creating the state file after cold review.
   Recommendation: Nothing to flag.
 ```
 
