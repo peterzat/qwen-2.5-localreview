@@ -74,16 +74,15 @@ class WarmServer:
         self.baseline_vram = 0
 
     def start(self) -> None:
-        # Signal intent before locking. review.py reads this to decide
-        # whether to wait for startup vs. falling to cold path.
-        write_state("starting")
-
         # Acquire GPU flock (non-blocking).
-        self.lock_file = acquire_gpu_lock(timeout=0.0)
+        self.lock_file = acquire_gpu_lock(timeout=0.5)
         if self.lock_file is None:
-            write_state("failed")
             _log("GPU flock held by another process, cannot start")
             sys.exit(1)
+
+        # Signal startup after acquiring the flock. Writing before flock
+        # acquisition would overwrite a running server's state file.
+        write_state("starting")
 
         _log(f"loading {self.model}...")
         from vllm import LLM
@@ -263,26 +262,31 @@ class WarmServer:
 
     def shutdown(self) -> None:
         _log("shutting down")
-        try:
-            write_state("stopped")
-        except Exception:
-            pass
+        # Only touch state file and socket if we hold the flock.
+        # Without this guard, a warm.py instance that failed flock
+        # acquisition would overwrite a running server's state.
+        if self.lock_file:
+            try:
+                write_state("stopped")
+            except Exception:
+                pass
         if self.sock:
             try:
                 self.sock.close()
             except Exception:
                 pass
-        if self.sock_path and os.path.exists(self.sock_path):
+        if self.lock_file and self.sock_path and os.path.exists(self.sock_path):
             try:
                 os.unlink(self.sock_path)
             except Exception:
                 pass
-        try:
-            p = state_path()
-            if os.path.exists(p):
-                os.unlink(p)
-        except Exception:
-            pass
+        if self.lock_file:
+            try:
+                p = state_path()
+                if os.path.exists(p):
+                    os.unlink(p)
+            except Exception:
+                pass
         if self.lock_file:
             try:
                 self.lock_file.close()
