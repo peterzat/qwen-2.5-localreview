@@ -7,7 +7,7 @@ across two languages and two difficulty levels.
 
 ### Acceptance Criteria
 
-- [ ] All actionable code-level findings from the 2026-04-11 code review are
+- [x] All actionable code-level findings from the 2026-04-11 code review are
       resolved: stale `build_llm_kwargs` comment (review.py:14), stale
       line-number references and "mirrors exactly" comment
       (tests/_harness.py:52,64), `os.sys.executable` non-public API usage
@@ -15,18 +15,18 @@ across two languages and two difficulty levels.
       (tests/_harness.py docstring, per CODEREVIEW NOTE on lines 232-318).
       The remaining WARN (SPEC.md done condition A rewording) is recorded in
       CODEREVIEW.md Accepted Risks.
-- [ ] review.py's VRAM preflight threshold is updated based on a measured
+- [x] review.py's VRAM preflight threshold is updated based on a measured
       analysis of vLLM's actual startup VRAM requirement for the production
       config (14B AWQ + FP8 KV + 32K context + `gpu_memory_utilization=0.90`).
       The analysis derives the threshold from observed values, not
       back-of-envelope estimates, and the reasoning is recorded in a code
       comment at the preflight check. README.md risk #1 (VRAM headroom) is
       updated to reflect the new threshold.
-- [ ] A test verifies the VRAM preflight code path: warning fires when free
+- [x] A test verifies the VRAM preflight code path: warning fires when free
       VRAM is below the threshold, does not fire when above. The test runs
       without loading the vLLM model (no ~30s overhead), keeping it eligible
       for the fast test suite.
-- [ ] Eight new diff fixtures exist covering a 2x2x2 matrix: {Python, C++} x
+- [x] Eight new diff fixtures exist covering a 2x2x2 matrix: {Python, C++} x
       {correct code, buggy code} x {simple, subtle}. "Correct/simple"
       fixtures are obviously clean code. "Correct/subtle" fixtures contain
       code that looks suspicious but has no real defect (false-positive
@@ -36,20 +36,20 @@ across two languages and two difficulty levels.
       condition, difficulty), the expected reviewer behavior, and an explicit
       "intentional test data" marker so review tools do not treat purposeful
       defects as findings to fix.
-- [ ] A test script runs the quality fixtures through the production config
+- [x] A test script runs the quality fixtures through the production config
       and checks: (a) every buggy fixture produces at least one `[BLOCK]` or
       `[WARN]` finding, (b) every correct fixture produces zero `[BLOCK]` or
       `[WARN]` findings (`[NOTE]` is acceptable, "No issues found." is
       acceptable). The script reports pass/fail per fixture with a summary
       line. Fixtures where the model misses the expected behavior are flagged
       as known capability limitations rather than infrastructure failures.
-- [ ] Quality fixture tests are gated behind `--full` (or equivalent explicit
+- [x] Quality fixture tests are gated behind `--full` (or equivalent explicit
       opt-in) and do not run in the fast pre-push path. The script header
       documents expected wall-clock run time.
-- [ ] Quality fixture results for the production config are committed to
+- [x] Quality fixture results for the production config are committed to
       `tests/results/` so future config or prompt changes can be diffed
       against the reference.
-- [ ] Existing fast tests (test-review.sh, test-call-local.sh) pass with all
+- [x] Existing fast tests (test-review.sh, test-call-local.sh) pass with all
       changes in place.
 
 ### Context
@@ -114,4 +114,43 @@ gap in the committed results rather than weakening the fixture.
 ---
 *Prior spec (2026-04-10): Ada-aware inference experiments (abstract-yawning-raven). 13/13 criteria met. Adopted FP8 KV as default, rejected vLLM upgrade, 32B AWQ, and FP8 weights.*
 
-<!-- SPEC_META: {"date":"2026-04-13","title":"Cleanup, VRAM preflight, quality validation fixtures","criteria_total":8,"criteria_met":0} -->
+### Proposal (2026-04-13)
+
+**What happened.** This turn cleaned up stale code from the FP8 KV adoption
+sequence, retuned the VRAM preflight from measured data, and built a quality
+validation corpus. The VRAM preflight now computes its threshold from
+`gpu_memory_utilization * total` rather than a hardcoded value, mirroring
+vLLM's own startup check (measured: 0.90 * 19.55 = 17.6 GB, ~1.8 GB idle
+headroom). Eight quality fixtures in a 2x2x2 matrix ({Python, C++} x
+{correct, buggy} x {simple, subtle}) scored 8/8 on the production config:
+all four buggy fixtures triggered BLOCK findings (including both "subtle"
+cases), all four correct fixtures produced zero false BLOCK/WARN. A polish
+pass added env var validation, crash/timeout detection in the quality test
+runner, and standardized headers on all 12 fixtures. Fast tests: 12/12 +
+12/12.
+
+**Questions and directions.**
+
+- *Integration in zat.env.* This project is functionally complete. The
+  consumer side (review-external.sh changes, .env entries, call_local.sh
+  wiring) lives in zat.env per the boundary rule. That is the natural
+  next step, done from within zat.env itself.
+
+- *System prompt tuning.* The 14B model misses the path-traversal fixture
+  (04) on both configs. The quality matrix gives a repeatable way to
+  measure whether prompt changes improve recall without introducing false
+  positives. A focused prompt engineering turn could target the gap, using
+  the 12-fixture corpus as the evaluation harness.
+
+- *vLLM upgrade.* The project is pinned to vLLM 0.19.0. When a newer
+  release ships, the bench/eval harness and quality matrix give a
+  mechanical way to validate: re-run both, diff results against committed
+  baselines, check for regressions. No work until a new version exists.
+
+- *Fixture expansion.* The current matrix covers two languages and two
+  difficulty levels. Additional languages (Go, Rust, TypeScript) or
+  additional bug classes (concurrency, resource leaks) would broaden
+  coverage. Worth doing if/when the system prompt or model changes and
+  the existing 12 fixtures no longer discriminate between configs.
+
+<!-- SPEC_META: {"date":"2026-04-13","title":"Cleanup, VRAM preflight, quality validation fixtures","criteria_total":8,"criteria_met":8} -->

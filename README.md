@@ -189,7 +189,7 @@ The Unix domain socket (`$XDG_RUNTIME_DIR/qwen-localreview.sock`) is local-only 
 |---|---|---|
 | `LOCAL_MODEL` | `Qwen/Qwen2.5-Coder-14B-Instruct-AWQ` | HuggingFace model ID |
 | `LOCAL_MAX_MODEL_LEN` | `32768` | Max context length in tokens |
-| `LOCAL_GPU_LOCK_TIMEOUT` | `270` | Seconds to wait for GPU flock before fail-open |
+| `LOCAL_GPU_LOCK_TIMEOUT` | `30` | Seconds to wait for GPU flock before fail-open |
 | `LOCAL_WARM_TIMEOUT` | `900` | Warm server idle timeout in seconds |
 | `LOCAL_REVIEW_SCRIPT` | (none) | Absolute path to `review.py` |
 | `LOCAL_REVIEW_VENV` | (none) | Absolute path to project `.venv` |

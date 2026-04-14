@@ -141,7 +141,6 @@ def main() -> int:
 
     output_reserve = _output_reserve(max_model_len)
 
-    _warm_attempted = False
     # Warm path: try the warm server before loading the tokenizer or model.
     # The server handles tokenization, truncation, and inference internally.
     warm_result = _try_warm_path(system_prompt, user_input)
@@ -157,7 +156,6 @@ def main() -> int:
         if output_text:
             print(output_text)
         return 0
-    _warm_attempted = True
 
     # Context limit guard: tokenizer-based, accounts for system prompt.
     from transformers import AutoTokenizer
@@ -185,11 +183,11 @@ def main() -> int:
         return 0
 
     # GPU mutex: serialize concurrent invocations via flock.
-    # Use a short timeout if the warm path was attempted (the warm server
-    # is likely holding the flock and stuck), preserving timeout budget.
+    # Cold path is only reached after the warm path fails, so the timeout
+    # is short (30s): the warm server is likely holding the GPU, and a
+    # concurrent cold-path review waiting longer is unlikely to succeed.
     from gpu_lock import acquire_gpu_lock
-    default_lock_timeout = "30" if _warm_attempted else "270"
-    lock_timeout = float(os.environ.get("LOCAL_GPU_LOCK_TIMEOUT", default_lock_timeout))
+    lock_timeout = float(os.environ.get("LOCAL_GPU_LOCK_TIMEOUT", "30"))
     lock_file = acquire_gpu_lock(timeout=lock_timeout)
     if lock_file is None:
         print(f"[{TAG}] GPU busy (another review running), skipping", file=sys.stderr)
