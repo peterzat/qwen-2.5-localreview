@@ -213,58 +213,59 @@ rm -f "${STDERR_FILE}"
 
 # ============================================================
 echo ""
-echo "==> Test 6: VRAM yield when external process uses GPU"
+echo "==> Test 6: gpu-release stops warm server"
 # ============================================================
 
-# Start the warm server, then allocate >256 MiB of GPU memory from a
-# separate process. The warm server should detect the external usage
-# within its 30s poll interval and exit.
+# Start the warm server, then run gpu-release. The warm server
+# should exit cleanly within a few seconds.
 cleanup_warm
 sleep 3
 WARM_LOG=$(mktemp)
 LOCAL_WARM_TIMEOUT=120 "${PYTHON}" "${WARM_SCRIPT}" 2>"${WARM_LOG}" &
 WARM_PID=$!
 
+GPU_RELEASE="${REPO_DIR}/gpu-release"
+
 if wait_for_socket 90; then
-  # Allocate 512 MiB on the GPU from a separate process.
-  "${PYTHON}" -c "
-import torch, time, sys
-x = torch.zeros(512 * 1024 * 1024 // 4, dtype=torch.float32, device='cuda')
-# Hold the allocation for 45s (enough for the 30s poll to fire).
-time.sleep(45)
-" &
-  ALLOC_PID=$!
-  sleep 2  # let the allocation happen
+  # Run gpu-release; it should stop the warm server.
+  RELEASE_EXIT=0
+  "${GPU_RELEASE}" || RELEASE_EXIT=$?
 
-  # Wait up to 40s for the warm server to detect and yield.
-  YIELDED=false
-  for i in $(seq 1 40); do
-    if ! kill -0 "${WARM_PID}" 2>/dev/null; then
-      YIELDED=true
-      break
-    fi
-    sleep 1
-  done
-
-  kill "${ALLOC_PID}" 2>/dev/null || true; wait "${ALLOC_PID}" 2>/dev/null || true
-
-  if ${YIELDED}; then
-    if grep -q "external GPU usage" "${WARM_LOG}" || grep -q "yielding" "${WARM_LOG}"; then
-      pass "VRAM yield: warm server exited on external GPU usage"
-    else
-      pass "VRAM yield: warm server exited (yield message not found, but process died)"
-    fi
+  if [[ "${RELEASE_EXIT}" -eq 0 ]]; then
+    pass "gpu-release: exited 0"
   else
-    fail "VRAM yield: warm server did not exit after external GPU allocation"
-    echo "    log: $(tail -5 "${WARM_LOG}")"
+    fail "gpu-release: exited ${RELEASE_EXIT}"
+  fi
+
+  # Warm server should be gone.
+  if ! kill -0 "${WARM_PID}" 2>/dev/null; then
+    pass "gpu-release: warm server stopped"
+  else
+    fail "gpu-release: warm server still running after gpu-release"
     cleanup_warm
   fi
 else
-  fail "warm server did not start for VRAM yield test"
+  fail "warm server did not start for gpu-release test"
   echo "    log: $(cat "${WARM_LOG}")"
 fi
 rm -f "${WARM_LOG}"
 WARM_PID=""
+
+# ============================================================
+echo ""
+echo "==> Test 6b: gpu-release is no-op when nothing running"
+# ============================================================
+
+cleanup_warm
+sleep 1
+RELEASE_EXIT=0
+"${GPU_RELEASE}" || RELEASE_EXIT=$?
+
+if [[ "${RELEASE_EXIT}" -eq 0 ]]; then
+  pass "gpu-release no-op: exited 0 when nothing running"
+else
+  fail "gpu-release no-op: exited ${RELEASE_EXIT}, expected 0"
+fi
 
 # ============================================================
 echo ""

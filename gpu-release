@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Release GPU memory held by the qwen-localreview warm server.
+#
+# Sends SIGTERM to the warm server process (if running) and waits
+# briefly for it to exit. Safe to call when nothing is running (no-op).
+#
+# Other projects on this machine should call this before GPU work:
+#   ~/src/qwen-2.5-localreview/gpu-release
+#
+# Exit codes:
+#   0  success (server stopped, or nothing was running)
+#   1  server did not exit within the timeout
+
+set -euo pipefail
+
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Resolve state file path via gpu_lock.py.
+STATE_PATH=$("${REPO_DIR}/.venv/bin/python" -c \
+  "from gpu_lock import state_path; print(state_path())" 2>/dev/null) || {
+  # venv or gpu_lock.py not available; nothing to release.
+  exit 0
+}
+
+# Read PID from state file.
+if [[ ! -f "${STATE_PATH}" ]]; then
+  exit 0
+fi
+
+PID=$(python3 -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        data = json.load(f)
+    pid = data.get('pid', 0)
+    state = data.get('state', '')
+    if state in ('starting', 'ready') and pid > 0:
+        print(pid)
+    else:
+        print(0)
+except Exception:
+    print(0)
+" "${STATE_PATH}" 2>/dev/null) || PID=0
+
+if [[ "${PID}" -eq 0 ]]; then
+  exit 0
+fi
+
+# Check if the process is actually alive.
+if ! kill -0 "${PID}" 2>/dev/null; then
+  exit 0
+fi
+
+# Send SIGTERM (warm.py handles this gracefully).
+kill "${PID}" 2>/dev/null || exit 0
+
+# Wait up to 5s for the process to exit and release VRAM.
+for _ in $(seq 1 50); do
+  if ! kill -0 "${PID}" 2>/dev/null; then
+    exit 0
+  fi
+  sleep 0.1
+done
+
+echo "gpu-release: warm server (PID ${PID}) did not exit within 5s" >&2
+exit 1

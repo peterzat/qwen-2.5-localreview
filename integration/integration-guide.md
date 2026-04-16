@@ -94,6 +94,23 @@ LOCAL_REVIEW_VENV=~/src/qwen-2.5-localreview/.venv
 #LOCAL_MAX_MODEL_LEN=32768
 ```
 
+## GPU Preemption
+
+The warm server (`warm.py`) holds ~18GB of VRAM while waiting for the next
+code review. Other projects on this machine that need GPU access should run:
+
+```bash
+~/src/qwen-2.5-localreview/gpu-release
+```
+
+This sends SIGTERM to the warm server, waits up to 5s for it to exit and
+release VRAM, then returns. If no warm server is running, it exits
+immediately (no-op). Exit code 0 on success, 1 if the server did not
+exit within the timeout.
+
+The next code review will pay the cold-start cost (~30-60s) to reload
+the model.
+
 ## Testing
 
 After applying changes, run the existing test suite from zat.env:

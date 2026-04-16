@@ -3,7 +3,10 @@
 
 Listens on a Unix domain socket for review requests, avoiding the
 30-60s model load cost on each invocation. Exits automatically after
-an idle timeout (default 15 min) or when external GPU usage is detected.
+an idle timeout (default 15 min) or on SIGTERM.
+
+Other projects that need the GPU should run gpu-release before their
+GPU work. gpu-release sends SIGTERM, which triggers a clean shutdown.
 
 Usage:
     .venv/bin/python warm.py              # foreground, default 15 min idle
@@ -40,23 +43,12 @@ import logging
 logging.disable(logging.WARNING)
 
 IDLE_TIMEOUT = int(os.environ.get("LOCAL_WARM_TIMEOUT", "900"))
-VRAM_YIELD_THRESHOLD = 256 * 1024 * 1024  # 256 MiB
-VRAM_POLL_INTERVAL = 30  # seconds
 GPU_MEMORY_UTILIZATION = 0.90
 MAX_REQUEST_SIZE = 128 * 1024 * 1024  # 128 MiB sanity guard
 
 
 def _log(msg: str) -> None:
     print(f"[{TAG}] warm: {msg}", file=sys.stderr, flush=True)
-
-
-def _used_vram_bytes() -> int:
-    """Device-level used VRAM via torch.cuda.mem_get_info()."""
-    import torch
-    if not torch.cuda.is_available():
-        return 0
-    free, total = torch.cuda.mem_get_info()
-    return total - free
 
 
 class WarmServer:
@@ -71,7 +63,6 @@ class WarmServer:
         self.lock_file = None
         self.llm = None
         self.tokenizer = None
-        self.baseline_vram = 0
 
     def start(self) -> None:
         # Acquire GPU flock (non-blocking).
@@ -94,7 +85,6 @@ class WarmServer:
             kv_cache_dtype="fp8_e4m3",
         )
         self.tokenizer = self.llm.get_tokenizer()
-        self.baseline_vram = _used_vram_bytes()
 
         # Create Unix domain socket.
         if os.path.exists(self.sock_path):
@@ -104,12 +94,15 @@ class WarmServer:
         self.sock.listen(2)
 
         write_state("ready")
-        _log(f"ready on {self.sock_path} "
-             f"(idle={IDLE_TIMEOUT}s, yield={VRAM_YIELD_THRESHOLD // (1024*1024)}MiB)")
+        _log(f"ready on {self.sock_path} (idle={IDLE_TIMEOUT}s)")
 
     def serve(self) -> None:
+        # GPU preemption: vLLM pre-allocates ~90% of VRAM, so polling for
+        # external GPU usage cannot work (other processes OOM before the
+        # poll fires). Instead, other projects call gpu-release to send
+        # SIGTERM when they need the GPU. This server handles SIGTERM
+        # gracefully via the signal handler in main().
         idle_deadline = time.monotonic() + IDLE_TIMEOUT
-        last_vram_check = time.monotonic()
 
         while True:
             remaining = idle_deadline - time.monotonic()
@@ -117,19 +110,9 @@ class WarmServer:
                 _log(f"idle timeout ({IDLE_TIMEOUT}s), exiting")
                 break
 
-            # VRAM yield check.
-            now = time.monotonic()
-            if now - last_vram_check >= VRAM_POLL_INTERVAL:
-                if self._check_vram():
-                    _log("external GPU usage detected, yielding")
-                    break
-                last_vram_check = now
-
-            select_timeout = min(
-                remaining,
-                VRAM_POLL_INTERVAL - (now - last_vram_check),
+            ready, _, _ = select.select(
+                [self.sock], [], [], max(0.1, remaining),
             )
-            ready, _, _ = select.select([self.sock], [], [], max(0.1, select_timeout))
 
             if ready:
                 try:
@@ -253,12 +236,6 @@ class WarmServer:
                 f"[{TAG}] {self.model} -- error: {message} -- 0 in / 0 out -- 0s"
             ],
         })
-
-    def _check_vram(self) -> bool:
-        """Returns True if external VRAM usage exceeds the yield threshold."""
-        current = _used_vram_bytes()
-        external_delta = current - self.baseline_vram
-        return external_delta > VRAM_YIELD_THRESHOLD
 
     def shutdown(self) -> None:
         _log("shutting down")

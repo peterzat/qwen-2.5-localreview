@@ -28,4 +28,5 @@ This includes `~/.config/claude-reviewers/.env`, which is created and managed by
 - vLLM pinned to a specific version in `setup.sh`. Update manually when needed.
 - All inference is pure offline (vLLM `LLM` class). No network server, no TCP/IP, no ports. Optional local Unix domain socket for keep-warm mode (`warm.py`).
 - GPU mutex via flock (`$XDG_RUNTIME_DIR/qwen-localreview.lock`). Concurrent invocations serialize automatically.
+- GPU preemption: the warm server holds ~18GB VRAM. Other projects should run `~/src/qwen-2.5-localreview/gpu-release` before GPU work to stop it. No-op when nothing is warm.
 - Fail-open: review.py exits 0 on all errors, warnings to stderr.
