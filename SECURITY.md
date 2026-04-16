@@ -1,6 +1,6 @@
-## Security Review -- 2026-04-13 (scope: paths)
+## Security Review -- 2026-04-16 (scope: paths)
 
-**Summary:** No security issues identified. review.py reads local files and passes content to vLLM offline inference via in-process LLM() or a local Unix domain socket (warm path). LLM output is printed as text, never executed. _harness.py reads hardcoded fixture paths and constructs vLLM configs with no external input. test-warm.sh uses properly quoted shell variables and communicates only with local processes. No secrets, no PII, no attacker-reachable code paths in the reviewed files.
+**Summary:** No security issues identified in gpu-release, warm.py, or tests/test-warm.sh. The new gpu-release script reads a PID from a state file in the user-owned XDG_RUNTIME_DIR and sends SIGTERM. No user-controlled input reaches shell commands or filesystem paths. warm.py changes removed dead VRAM polling code (net reduction in attack surface). All IPC remains via Unix domain socket with filesystem-permission access control. No secrets, no PII, no attacker-reachable code paths.
 
 ### Findings
 
@@ -11,6 +11,6 @@ No security issues identified.
 (none)
 
 ---
-*Prior review (2026-04-13): No security issues across five files (review.py, warm.py, gpu_lock.py, test-review.sh, test-warm.sh). Local-CLI trust boundary, no network surface, LLM output never executed.*
+*Prior review (2026-04-14): No issues in warm.py and gpu_lock.py. Unix socket in user-owned XDG_RUNTIME_DIR, JSON-parsed requests with size bounds, LLM output never executed, atomic state file writes.*
 
-<!-- SECURITY_META: {"date":"2026-04-13","commit":"e208e451437604f32c386beae8d3dcb00d21c7b0","scope":"paths","scanned_files":["review.py","tests/_harness.py","tests/test-warm.sh"],"block":0,"warn":0,"note":0} -->
+<!-- SECURITY_META: {"date":"2026-04-16","commit":"8591da1ad37a2189f5132b13b83ff94cf0a672de","scope":"paths","scanned_files":["gpu-release","tests/test-warm.sh","warm.py"],"block":0,"warn":0,"note":0} -->

@@ -183,6 +183,16 @@ If no warm server is running, `review.py` uses the cold path automatically. If t
 
 The Unix domain socket (`$XDG_RUNTIME_DIR/qwen-localreview.sock`) is local-only and user-owned. No network exposure, no authentication needed (same trust boundary as the filesystem).
 
+## GPU Preemption
+
+The warm server holds ~18GB of VRAM while idle. Other projects on this machine that need GPU access should release it first:
+
+```bash
+~/src/qwen-2.5-localreview/gpu-release
+```
+
+No-op when nothing is running. Exit code 0 on success, 1 if the server did not exit within the 5s timeout. The next code review pays the cold-start cost (~30-60s) to reload the model.
+
 ## Environment Variables
 
 | Variable | Default | Description |
